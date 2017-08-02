@@ -1,13 +1,13 @@
 package regresql
 
 import (
-	"path/filepath"
-	"os"
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 type Folder struct {
-	Dir     string
+	Dir   string
 	Files []string
 }
 
@@ -16,7 +16,7 @@ func newFolder(path string) *Folder {
 }
 
 func appendPath(folders []Folder, path string) []Folder {
-	var dir  string = filepath.Dir(path)
+	var dir string = filepath.Dir(path)
 	var name string = filepath.Base(path)
 
 	// search dir in folders
@@ -27,7 +27,7 @@ func appendPath(folders []Folder, path string) []Folder {
 			return folders
 		}
 	}
-	
+
 	// we didn't find the path folder, append a new entry and return it
 	f := newFolder(dir)
 	f.Files = append(f.Files, name)
@@ -36,8 +36,8 @@ func appendPath(folders []Folder, path string) []Folder {
 }
 
 func Walk(dir string) []Folder {
-	var folders []Folder;
-	
+	var folders []Folder
+
 	visit := func(path string, f os.FileInfo, err error) error {
 		if filepath.Ext(path) == ".sql" {
 			folders = appendPath(folders, path)

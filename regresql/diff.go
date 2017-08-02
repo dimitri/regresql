@@ -1,8 +1,8 @@
 package regresql
 
 import (
-	"io/ioutil"
 	"github.com/pmezard/go-difflib/difflib"
+	"io/ioutil"
 )
 
 func readLines(filename string) []string {
@@ -30,4 +30,3 @@ func Diff(a string, b string, c int) string {
 	text, _ := difflib.GetUnifiedDiffString(diff)
 	return text
 }
-
