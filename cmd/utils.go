@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"os"
 	"fmt"
+	"os"
 )
 
 // Check that given path string is a directory that exists

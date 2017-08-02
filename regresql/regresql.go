@@ -1,8 +1,8 @@
 package regresql
 
 import (
-	"fmt"
 	"database/sql"
+	"fmt"
 
 	// "github.com/mndrix/tap-go"
 	_ "github.com/lib/pq"
