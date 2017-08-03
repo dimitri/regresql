@@ -2,7 +2,6 @@ package regresql
 
 import (
 	"fmt"
-	"path/filepath"
 	// "github.com/mndrix/tap-go"
 )
 
@@ -13,7 +12,6 @@ func Init(root string, pguri string) {
 	}
 
 	suite := Walk(root)
-	suite.RegressDir = filepath.Join(suite.Root, "regresql")
 
 	suite.createRegressDir()
 	suite.setupConfig(pguri)
@@ -31,8 +29,13 @@ default plan files contain a single entry named "1", you can rename the test
 case and add a value for each parameter. `)
 }
 
-func Update(dir string) {
-	fmt.Println("Update: update -C %s", dir)
+func Update(root string) {
+	fmt.Println("Update: update -C %s", root)
+
+	suite := Walk(root)
+	config := suite.readConfig()
+
+	suite.createExpectedResults(config.PgUri)
 }
 
 func Test(dir string) {

@@ -1,9 +1,12 @@
 package regresql
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	_ "github.com/lib/pq"
 )
 
 type Suite struct {
@@ -18,7 +21,8 @@ type Folder struct {
 }
 
 func newSuite(root string) *Suite {
-	return &Suite{root, "", []Folder{}}
+	regressdir := filepath.Join(root, "regresql")
+	return &Suite{root, regressdir, []Folder{}}
 }
 
 func newFolder(path string) *Folder {
@@ -71,19 +75,52 @@ func (s *Suite) Println() {
 
 func (s *Suite) initRegressHierarchy() {
 	for _, folder := range s.Dirs {
-		rdir := filepath.Join(s.RegressDir, folder.Dir)
-		fmt.Printf("Creating directory '%s'\n", rdir)
-
-		err := os.MkdirAll(rdir, 0755)
-		if err != nil {
-			panic(err)
-		}
+		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
+		maybeMkdirAll(rdir)
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 
 			q := parseQueryFile(qfile)
 			q.CreateEmptyPlan(rdir)
+		}
+	}
+}
+
+func (s *Suite) createExpectedResults(pguri string) {
+	fmt.Printf("Connecting to '%s'\n", pguri)
+	db, err := sql.Open("postgres", pguri)
+
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	for _, folder := range s.Dirs {
+		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
+		edir := filepath.Join(s.RegressDir, "expected", folder.Dir)
+		maybeMkdirAll(edir)
+
+		for _, name := range folder.Files {
+			qfile := filepath.Join(s.Root, folder.Dir, name)
+
+			q := parseQueryFile(qfile)
+			p := q.GetPlan(rdir)
+			p.Execute(db, edir)
+		}
+	}
+}
+
+// Only create dir(s) when it doesn't exists already
+func maybeMkdirAll(dir string) {
+	stat, err := os.Stat(dir)
+	if err != nil || !stat.IsDir() {
+		fmt.Printf("Creating directory '%s'\n", dir)
+
+		err := os.MkdirAll(dir, 0755)
+
+		if err != nil {
+			panic(err)
 		}
 	}
 }

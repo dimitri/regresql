@@ -1,7 +1,9 @@
 package regresql
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -41,4 +43,22 @@ func (s *Suite) setupConfig(pguri string) {
 
 	fmt.Printf("Creating configuration file '%s'\n", configFile)
 	v.WriteConfigAs(configFile)
+}
+
+func (s *Suite) readConfig() config {
+	var config config
+	v := viper.New()
+	v.SetConfigType("yaml")
+	configFile := s.getRegressConfigFile()
+
+	data, err := ioutil.ReadFile(configFile)
+
+	if err != nil {
+		panic(err)
+	}
+
+	v.ReadConfig(bytes.NewBuffer(data))
+	v.Unmarshal(&config)
+
+	return config
 }
