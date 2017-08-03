@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/dimitri/regresql/regresql"
 	"github.com/spf13/cobra"
 )
@@ -14,14 +12,12 @@ var (
 
 // initCmd represents the init command
 var initCmd = &cobra.Command{
-	Use:   "init",
+	Use:   "init [flags] postgres://user@host/dbname",
 	Short: "Initialize regresql for use in your project",
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("init called")
-		fmt.Printf("     cwd: %s\n", cwd)
-		fmt.Printf("  pg uri: %s\n", pguri)
-
 		checkDirectory(cwd)
+		pguri := args[0]
 		regresql.Init(cwd, pguri)
 	},
 }
@@ -39,5 +35,4 @@ func init() {
 	// is called directly, e.g.:
 	// initCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	initCmd.Flags().StringVarP(&cwd, "cwd", "C", ".", "Change to Directory")
-	initCmd.Flags().StringVar(&pguri, "pguri", "postgres:///", "PostgreSQL connection string")
 }

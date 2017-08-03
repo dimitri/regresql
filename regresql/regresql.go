@@ -1,25 +1,34 @@
 package regresql
 
 import (
-	"database/sql"
 	"fmt"
-
+	"path/filepath"
 	// "github.com/mndrix/tap-go"
-	_ "github.com/lib/pq"
 )
 
-func Init(dir string, pguri string) {
-	fmt.Println("Init: init -C %s", dir)
-
-	fmt.Printf("Trying to connect to %s\n", pguri)
-	_, err := sql.Open("postgres", pguri)
-
+func Init(root string, pguri string) {
+	err := TestConnectionString(pguri)
 	if err != nil {
-		fmt.Println(err)
-		return
-	} else {
-		fmt.Println("Connected")
+		panic(err)
 	}
+
+	suite := Walk(root)
+	suite.RegressDir = filepath.Join(suite.Root, "regresql")
+
+	suite.createRegressDir()
+	suite.setupConfig(pguri)
+	suite.initRegressHierarchy()
+
+	fmt.Println("")
+	fmt.Println(`Empty test plans have been created.
+Edit the plans to add query binding values, then run 
+
+  regresql update [ -C directory ]
+
+to create the expected regression files for your test plans. Plans are
+simple YAML files containing multiple set of query parameter bindings. The
+default plan files contain a single entry named "1", you can rename the test
+case and add a value for each parameter. `)
 }
 
 func Update(dir string) {
