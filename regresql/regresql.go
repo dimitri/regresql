@@ -33,14 +33,8 @@ func Test(dir string) {
 func List(dir string) {
 	fmt.Println("List: list -C %s", dir)
 
-	folders := Walk(dir)
-
-	for _, dir := range folders {
-		fmt.Printf("%s\n", dir.Dir)
-		for _, name := range dir.Files {
-			fmt.Printf("  %s\n", name)
-		}
-	}
+	suite := Walk(dir)
+	suite.Println()
 
 	return
 }
