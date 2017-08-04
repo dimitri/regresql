@@ -20,9 +20,11 @@ const (
 )
 
 type Query struct {
-	Path  string
-	Query string
-	Vars  []string
+	Path   string
+	Text   string   // original query text
+	Query  string   // "normalized" SQL query for lib/pq
+	Vars   []string // variable names used in the query text
+	Params []string // ordered list of params used in the query
 }
 
 type Plan struct {
@@ -38,56 +40,69 @@ func parseQueryFile(queryPath string) *Query {
 	if err != nil {
 		panic(err)
 	}
-	sql := string(sqlbytes)
+	queryString := string(sqlbytes)
 
+	return parseQueryString(queryPath, queryString)
+}
+
+// let's consider as an example the following SQL query:
+//
+//    select * from foo where a = :a and b between :a and :b
+//
+// which gets rewritten
+//
+//    select * from foo where a = $1 and b between $1 and $2
+//
+// then we have:  mapv = {a: $1, b: $2}
+// and we want: params = [a a b]
+//
+// the idea is that then we can replace the param names by their values
+// thanks to the plan test bindings given by the user (see p.Execute)
+func parseQueryString(queryPath string, queryString string) *Query {
 	// find a uses of variables in the SQL query text, and put then in a
 	// map so that we get each of them only once, even when used several
 	// times in the same query
-	mapv := make(map[string]bool)
+	params := make([]string, 0)
+	vars := make([]string, 0)
+
 	r, _ := regexp.Compile(psqlVarRE)
-	uses := r.FindAllStringSubmatch(sql, -1)
+	uses := r.FindAllStringSubmatch(queryString, -1)
+
+	// now compute the map of variable names (mapv)
+	mapv := make(map[string]int)
+	i := 1
 
 	for _, match := range uses {
-		mapv[match[1]] = true
+		varname := match[1]
+		params = append(params, varname)
+		if _, found := mapv[varname]; !found {
+			mapv[varname] = i
+			i++
+		}
 	}
 
-	// now we're only interested into the mapv keys: variable names.
-	var vars []string
-	for k := range mapv {
-		vars = append(vars, k)
-	}
+	// now compute the normalized SQL query, with ordinal markers ($1,
+	// $2, ...) as expected by the lib/pq driver.
+	sql := string(queryString)
 
-	return &Query{queryPath, sql, vars}
-}
-
-// Prepare a Query from its raw text by:
-//   - transforming :'vars' into ? in the query text
-//   - preparing an args... interface{} from given bindings
-func (q *Query) Prepare(bindings map[string]string) (string, []interface{}) {
-	sql := string(q.Query)
-
-	params := make([]interface{}, 0)
-	r, _ := regexp.Compile(psqlVarRE)
-	uses := r.FindAllStringSubmatch(q.Query, -1)
-
-	// deduplicate param names in the query, and assign each of them a
-	// different ordinal marker ($1, $2, etc) for lib/pq
-	mapv := make(map[string]int)
-
-	for i, match := range uses {
-		mapv[match[1]] = i + 1
-	}
-
-	// FIXME
-	//
-	// doesn't work in the general case, using :a :b :b which is then
-	// translated to $1 $2 $2, and params must be [a b b]
 	for name, ord := range mapv {
+		vars = append(vars, name)
 		r, _ := regexp.Compile(fmt.Sprintf(`:["']?%s["']?`, name))
 		sql = r.ReplaceAllLiteralString(sql, fmt.Sprintf("$%d", ord))
-		params = append(params, bindings[name])
 	}
-	return sql, params
+
+	// now build and return our Query
+	return &Query{queryPath, queryString, sql, vars, params}
+}
+
+// Prepare an args... interface{} for Query from given bindings
+func (q *Query) Prepare(bindings map[string]string) (string, []interface{}) {
+	params := make([]interface{}, 0)
+
+	for _, varname := range q.Params {
+		params = append(params, bindings[varname])
+	}
+	return q.Query, params
 }
 
 func (q *Query) CreateEmptyPlan(dir string) *Plan {
