@@ -181,8 +181,8 @@ func (q *Query) GetPlan(planDir string) *Plan {
 
 // Executes a plan and returns the filepath where the output has been
 // written, for later comparing
-func (p *Plan) Execute(db *sql.DB, dir string) [][]map[string]interface{} {
-	result := [][]map[string]interface{}{}
+func (p *Plan) Execute(db *sql.DB, dir string) []*ResultSet {
+	result := make([]*ResultSet, len(p.Bindings))
 	for _, bindings := range p.Bindings {
 		sql, args := p.Query.Prepare(bindings)
 		res, err := QueryDB(db, sql, args...)
@@ -193,7 +193,7 @@ func (p *Plan) Execute(db *sql.DB, dir string) [][]map[string]interface{} {
 			panic(err)
 		}
 
-		fmt.Printf("r: %v\n", result)
+		res.Println()
 		result = append(result, res)
 	}
 	return result
