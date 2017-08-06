@@ -131,7 +131,7 @@ func (s *Suite) testQueries(pguri string) {
 	defer db.Close()
 
 	t := tap.New()
-	t.Header(2)
+	t.Header(0)
 
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
