@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	_ "github.com/lib/pq"
+	"github.com/mndrix/tap-go"
 )
 
 type Suite struct {
@@ -116,6 +117,36 @@ func (s *Suite) createExpectedResults(pguri string) {
 			for _, rs := range p.ResultSets {
 				fmt.Printf("    %s\n", filepath.Base(rs.Filename))
 			}
+		}
+	}
+}
+
+func (s *Suite) testQueries(pguri string) {
+	fmt.Printf("Connecting to '%s'\n", pguri)
+	db, err := sql.Open("postgres", pguri)
+
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	t := tap.New()
+	t.Header(2)
+
+	for _, folder := range s.Dirs {
+		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
+		edir := filepath.Join(s.RegressDir, "expected", folder.Dir)
+		odir := filepath.Join(s.RegressDir, "out", folder.Dir)
+		maybeMkdirAll(odir)
+
+		for _, name := range folder.Files {
+			qfile := filepath.Join(s.Root, folder.Dir, name)
+
+			q := parseQueryFile(qfile)
+			p := q.GetPlan(rdir)
+			p.Execute(db)
+			p.WriteResultSets(odir)
+			p.CompareResultSets(s.RegressDir, edir, t)
 		}
 	}
 }

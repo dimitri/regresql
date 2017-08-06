@@ -16,15 +16,19 @@ func readLines(filename string) []string {
 	return lines
 }
 
-func Diff(a string, b string, c int) string {
+func DiffFiles(a string, b string, c int) string {
 	a_lines := readLines(a)
 	b_lines := readLines(b)
 
+	return DiffLines(a, b, a_lines, b_lines, c)
+}
+
+func DiffLines(from string, to string, a []string, b []string, c int) string {
 	diff := difflib.UnifiedDiff{
-		A:        a_lines,
-		B:        b_lines,
-		FromFile: a,
-		ToFile:   b,
+		A:        a,
+		B:        b,
+		FromFile: from,
+		ToFile:   to,
 		Context:  c,
 	}
 	text, _ := difflib.GetUnifiedDiffString(diff)

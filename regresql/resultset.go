@@ -147,7 +147,13 @@ func (r *ResultSet) Write(filename string, overwrite bool) error {
 		if !overwrite {
 			return errors.New("Target file '%s' already exists")
 		}
-		f, err = os.Open(filename)
+		f, err = os.OpenFile(filename, os.O_WRONLY, 0644)
+
+		if err != nil {
+			panic(err)
+		}
+
+		err = f.Truncate(0)
 
 		if err != nil {
 			panic(err)

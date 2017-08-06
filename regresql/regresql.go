@@ -2,7 +2,6 @@ package regresql
 
 import (
 	"fmt"
-	// "github.com/mndrix/tap-go"
 )
 
 func Init(root string, pguri string) {
@@ -30,21 +29,35 @@ case and add a value for each parameter. `)
 }
 
 func Update(root string) {
-	fmt.Println("Update: update -C %s", root)
-
 	suite := Walk(root)
 	config := suite.readConfig()
 
 	suite.createExpectedResults(config.PgUri)
+
+	fmt.Println("")
+	fmt.Println(`Expected files have now been created.
+You can run regression tests for your SQL queries with the command
+
+  regresql test [ -C directory ]
+
+When you add new queries to your code repository, run regresql init to
+create the missing test plans, edit them to add test parameters, and then
+run regresql update to have exepected data files to test against.
+
+If you change the expected result set (because picking a new data set of
+because new requirements impacts the result of existing queries, you can run
+the regresql update command again to reset the expected output files.
+ `)
 }
 
-func Test(dir string) {
-	fmt.Println("Test: test -C %s", dir)
+func Test(root string) {
+	suite := Walk(root)
+	config := suite.readConfig()
+
+	suite.testQueries(config.PgUri)
 }
 
 func List(dir string) {
-	fmt.Println("List: list -C %s", dir)
-
 	suite := Walk(dir)
 	suite.Println()
 
