@@ -3,7 +3,6 @@ package regresql
 import (
 	"bytes"
 	"database/sql"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"os"
@@ -14,8 +13,9 @@ import (
 )
 
 type ResultSet struct {
-	Cols []string
-	Rows [][]interface{}
+	Cols     []string
+	Rows     [][]interface{}
+	Filename string
 }
 
 func TestConnectionString(pguri string) error {
@@ -66,11 +66,17 @@ func QueryDB(db *sql.DB, query string, args ...interface{}) (*ResultSet, error) 
 
 		res = append(res, r)
 	}
-	return &ResultSet{cols, res}, nil
+	return &ResultSet{cols, res, ""}, nil
 }
 
 // ResultSet pretty printer, ala psql (much simplified)
 func (r *ResultSet) Println() {
+	fmt.Println(r.PrettyPrint())
+
+}
+func (r *ResultSet) PrettyPrint() string {
+	var b bytes.Buffer
+
 	cn := len(r.Cols)
 
 	// compute max length of values for each col, including column
@@ -95,79 +101,79 @@ func (r *ResultSet) Println() {
 	for i, colname := range r.Cols {
 		justify := strings.Repeat(" ", (maxl[i]-len(colname))/2)
 		centered := justify + colname
-		fmt.Printf(fmts[i], centered)
+		fmt.Fprintf(&b, fmts[i], centered)
 		if i+1 < cn {
-			fmt.Printf(" | ")
+			fmt.Fprintf(&b, " | ")
 		}
 	}
-	fmt.Println()
+	fmt.Fprintf(&b, "\n")
 
 	for i, l := range maxl {
-		fmt.Printf("%s", strings.Repeat("-", l))
+		fmt.Fprintf(&b, "%s", strings.Repeat("-", l))
 		if i+1 < cn {
-			fmt.Printf("-+-")
+			fmt.Fprintf(&b, "-+-")
 		}
 	}
-	fmt.Println()
+	fmt.Fprintf(&b, "\n")
 
 	for _, row := range r.Rows {
 		for i, value := range row {
 			s := valueToString(value)
 			if i+1 < cn {
-				fmt.Printf(fmts[i], s)
-				fmt.Printf(" | ")
+				fmt.Fprintf(&b, fmts[i], s)
+				fmt.Fprintf(&b, " | ")
 			} else {
-				fmt.Printf(s)
+				fmt.Fprintf(&b, s)
 			}
 		}
-		fmt.Println()
+		fmt.Fprintf(&b, "\n")
 	}
+	return b.String()
+}
+
+func (r *ResultSet) Write(filename string, overwrite bool) error {
+	var f *os.File
+	var err error
+	if _, err = os.Stat(filename); os.IsNotExist(err) {
+		f, err = os.Create(filename)
+
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+
+		fmt.Fprint(f, r.PrettyPrint())
+	} else {
+		if !overwrite {
+			return errors.New("Target file '%s' already exists")
+		}
+		f, err = os.Open(filename)
+
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+
+		fmt.Fprint(f, r.PrettyPrint())
+	}
+	return nil
 }
 
 func valueToString(value interface{}) string {
 	var s string
 	switch value.(type) {
-	case int: s = fmt.Sprintf("%d", value)
-	case float32: s = fmt.Sprintf("%g", value)
-	case float64: s = fmt.Sprintf("%g", value)
-	case time.Time: s = fmt.Sprintf("%s", value)
-	case []byte: s = fmt.Sprintf("%s", value)
-	default: s = fmt.Sprintf("%v", value)
+	case int:
+		s = fmt.Sprintf("%d", value)
+	case float32:
+		s = fmt.Sprintf("%g", value)
+	case float64:
+		s = fmt.Sprintf("%g", value)
+	case time.Time:
+		s = fmt.Sprintf("%s", value)
+	case []byte:
+		s = fmt.Sprintf("%s", value)
+	default:
+		s = fmt.Sprintf("%v", value)
 	}
 	return s
-}
-
-func (r *ResultSet) Store(fname string) error {
-	b := new(bytes.Buffer)
-	enc := gob.NewEncoder(b)
-	err := enc.Encode(r)
-	if err != nil {
-		return err
-	}
-
-	fh, eopen := os.OpenFile(fname, os.O_CREATE|os.O_WRONLY, 0666)
-	defer fh.Close()
-	if eopen != nil {
-		return eopen
-	}
-	n, e := fh.Write(b.Bytes())
-	if e != nil {
-		return e
-	}
-	fmt.Fprintf(os.Stderr, "%d bytes successfully written to file\n", n)
-	return nil
-}
-
-func Load(fname string) (*ResultSet, error) {
-	fh, err := os.Open(fname)
-	if err != nil {
-		return nil, err
-	}
-	r := new(ResultSet)
-	dec := gob.NewDecoder(fh)
-	err = dec.Decode(&r)
-	if err != nil {
-		return nil, err
-	}
-	return r, nil
 }

@@ -96,17 +96,26 @@ func (s *Suite) createExpectedResults(pguri string) {
 	}
 	defer db.Close()
 
+	fmt.Println("Wrote expected Result Sets:")
+
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
 		edir := filepath.Join(s.RegressDir, "expected", folder.Dir)
 		maybeMkdirAll(edir)
+
+		fmt.Printf("  %s\n", edir)
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 
 			q := parseQueryFile(qfile)
 			p := q.GetPlan(rdir)
-			p.Execute(db, edir)
+			p.Execute(db)
+			p.WriteResultSets(edir)
+
+			for _, rs := range p.ResultSets {
+				fmt.Printf("    %s\n", filepath.Base(rs.Filename))
+			}
 		}
 	}
 }

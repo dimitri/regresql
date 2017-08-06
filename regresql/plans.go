@@ -8,104 +8,22 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	_ "github.com/lib/pq"
 	"github.com/theherk/viper" // fork with write support
 )
 
-const (
-	psqlVarRE = `:['"]?([A-Za-z][A-Za-z0-9]*)['"]?`
-)
-
-type Query struct {
-	Path   string
-	Text   string   // original query text
-	Query  string   // "normalized" SQL query for lib/pq
-	Vars   []string // variable names used in the query text
-	Params []string // ordered list of params used in the query
-}
-
 type Plan struct {
-	Query    *Query
-	Path     string // the file path where we read the Plan from
-	Bindings []map[string]string
-}
-
-// Parse a SQL file and returns a Query instance, with variables used in the
-// query separated in the Query.Vars map.
-func parseQueryFile(queryPath string) *Query {
-	sqlbytes, err := ioutil.ReadFile(queryPath)
-	if err != nil {
-		panic(err)
-	}
-	queryString := string(sqlbytes)
-
-	return parseQueryString(queryPath, queryString)
-}
-
-// let's consider as an example the following SQL query:
-//
-//    select * from foo where a = :a and b between :a and :b
-//
-// which gets rewritten
-//
-//    select * from foo where a = $1 and b between $1 and $2
-//
-// then we have:  mapv = {a: $1, b: $2}
-// and we want: params = [a a b]
-//
-// the idea is that then we can replace the param names by their values
-// thanks to the plan test bindings given by the user (see p.Execute)
-func parseQueryString(queryPath string, queryString string) *Query {
-	// find a uses of variables in the SQL query text, and put then in a
-	// map so that we get each of them only once, even when used several
-	// times in the same query
-	params := make([]string, 0)
-	vars := make([]string, 0)
-
-	r, _ := regexp.Compile(psqlVarRE)
-	uses := r.FindAllStringSubmatch(queryString, -1)
-
-	// now compute the map of variable names (mapv)
-	mapv := make(map[string]int)
-	i := 1
-
-	for _, match := range uses {
-		varname := match[1]
-		params = append(params, varname)
-		if _, found := mapv[varname]; !found {
-			mapv[varname] = i
-			i++
-		}
-	}
-
-	// now compute the normalized SQL query, with ordinal markers ($1,
-	// $2, ...) as expected by the lib/pq driver.
-	sql := string(queryString)
-
-	for name, ord := range mapv {
-		vars = append(vars, name)
-		r, _ := regexp.Compile(fmt.Sprintf(`:["']?%s["']?`, name))
-		sql = r.ReplaceAllLiteralString(sql, fmt.Sprintf("$%d", ord))
-	}
-
-	// now build and return our Query
-	return &Query{queryPath, queryString, sql, vars, params}
-}
-
-// Prepare an args... interface{} for Query from given bindings
-func (q *Query) Prepare(bindings map[string]string) (string, []interface{}) {
-	params := make([]interface{}, 0)
-
-	for _, varname := range q.Params {
-		params = append(params, bindings[varname])
-	}
-	return q.Query, params
+	Query      *Query
+	Path       string // the file path where we read the Plan from
+	Names      []string
+	Bindings   []map[string]string
+	ResultSets []ResultSet
 }
 
 func (q *Query) CreateEmptyPlan(dir string) *Plan {
+	var names []string
 	var bindings []map[string]string
 	pfile := getPlanPath(q, dir)
 
@@ -114,16 +32,20 @@ func (q *Query) CreateEmptyPlan(dir string) *Plan {
 	}
 
 	if len(q.Vars) > 0 {
+		names = make([]string, 1)
 		bindings = make([]map[string]string, 1)
+
+		names[0] = "1"
 		bindings[0] = make(map[string]string)
 		for _, varname := range q.Vars {
 			bindings[0][varname] = ""
 		}
 	} else {
+		names = []string{}
 		bindings = []map[string]string{}
 	}
 
-	plan := &Plan{q, pfile, bindings}
+	plan := &Plan{q, pfile, names, bindings, []ResultSet{}}
 	plan.Write()
 
 	return plan
@@ -133,10 +55,9 @@ func (q *Query) GetPlan(planDir string) *Plan {
 	pfile := getPlanPath(q, planDir)
 
 	if _, err := os.Stat(pfile); os.IsNotExist(err) {
-		return &Plan{q, pfile, []map[string]string{}}
+		return &Plan{q, pfile,
+			[]string{}, []map[string]string{}, []ResultSet{}}
 	}
-
-	fmt.Printf("Reading bindings from '%s'\n", pfile)
 
 	v := viper.New()
 	v.SetConfigType("yaml")
@@ -160,45 +81,78 @@ func (q *Query) GetPlan(planDir string) *Plan {
 	// here: that's dot[0] for a Bindings entry then dot[1] for the key
 	// names within that Plan Bindings entry.
 	var bindings []map[string]string
-	current_map := make(map[string]string)
-	i := ""
+	var names []string
+	var current_map map[string]string
+	var current_name string
 
 	for _, key := range v.AllKeys() {
 		dots := strings.Split(key, ".") // we expect a single level
 		value := v.GetString(key)
 
-		if i != "" && i != dots[0] {
-			bindings = append(bindings, current_map)
-			i = dots[0]
+		if current_name == "" || current_name != dots[0] {
+			if current_name != "" {
+				bindings = append(bindings, current_map)
+			}
+			current_name = dots[0]
+			names = append(names, current_name)
 			current_map = make(map[string]string)
 		}
 		current_map[dots[1]] = value
 	}
+	// don't forget to finish the current map when out of the loop
 	bindings = append(bindings, current_map)
 
-	return &Plan{q, pfile, bindings}
+	return &Plan{q, pfile, names, bindings, []ResultSet{}}
 }
 
 // Executes a plan and returns the filepath where the output has been
 // written, for later comparing
-func (p *Plan) Execute(db *sql.DB, dir string) []*ResultSet {
-	result := make([]*ResultSet, len(p.Bindings))
-	for _, bindings := range p.Bindings {
+func (p *Plan) Execute(db *sql.DB) {
+	if len(p.Query.Params) == 0 {
+		// this Query has no plans, so don't loop over the bindings
+		args := make([]interface{}, 0)
+		res, err := QueryDB(db, p.Query.Query, args...)
+
+		if err != nil {
+			fmt.Printf("Error executing\n%s", p.Query.Query)
+			panic(err)
+		}
+		result := make([]ResultSet, 1)
+		result[0] = *res
+		p.ResultSets = result
+		return
+	}
+
+	// general case, with a plan and a set of Bindings to go through
+	result := make([]ResultSet, len(p.Bindings))
+
+	for i, bindings := range p.Bindings {
 		sql, args := p.Query.Prepare(bindings)
 		res, err := QueryDB(db, sql, args...)
 
 		if err != nil {
-			fmt.Printf("Error executing\n%s\nwith params: %v",
+			fmt.Printf("Error executing\n%s\nwith params: %v\n",
 				sql, args)
 			panic(err)
 		}
-
-		res.Println()
-		result = append(result, res)
+		result[i] = *res
 	}
-	return result
+	p.ResultSets = result
 }
 
+func (p *Plan) WriteResultSets(dir string) {
+	for i, rs := range p.ResultSets {
+		rsFileName := getResultSetPath(p, dir, i)
+		err := rs.Write(rsFileName, true)
+
+		if err != nil {
+			panic(err)
+		}
+		p.ResultSets[i].Filename = rsFileName
+	}
+}
+
+// Write a plan to disk in YAML format, thanks to Viper.
 func (p *Plan) Write() {
 	if len(p.Bindings) == 0 {
 		fmt.Printf("Skipping Plan '%s': query uses no variable\n", p.Path)
@@ -211,8 +165,7 @@ func (p *Plan) Write() {
 
 	for i, bindings := range p.Bindings {
 		for key, value := range bindings {
-			// be friendly to the user and count plans from 1
-			vpath := fmt.Sprintf("%d.%s", i+1, key)
+			vpath := fmt.Sprintf("%s.%s", p.Names[i], key)
 			v.Set(vpath, value)
 		}
 	}
@@ -225,4 +178,16 @@ func getPlanPath(q *Query, targetdir string) string {
 	planPath = planPath + ".yaml"
 
 	return planPath
+}
+
+func getResultSetPath(p *Plan, targetdir string, index int) string {
+	var rsFileName string
+	basename := strings.TrimSuffix(filepath.Base(p.Path), path.Ext(p.Path))
+
+	if len(p.Query.Params) == 0 {
+		rsFileName = fmt.Sprintf("%s.out", basename)
+	} else {
+		rsFileName = fmt.Sprintf("%s.%s.out", basename, p.Names[index])
+	}
+	return filepath.Join(targetdir, rsFileName)
 }
