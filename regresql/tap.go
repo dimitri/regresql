@@ -10,7 +10,7 @@ import (
 
 func (p *Plan) CompareResultSets(regressDir string, expectedDir string, t *tap.T) {
 	for i, rs := range p.ResultSets {
-		testName := strings.TrimPrefix(rs.Filename, regressDir+"/")
+		testName := strings.TrimPrefix(rs.Filename, regressDir+"/out/")
 		expectedFilename := filepath.Join(expectedDir,
 			filepath.Base(rs.Filename))
 		diff := DiffFiles(expectedFilename, rs.Filename, 3)

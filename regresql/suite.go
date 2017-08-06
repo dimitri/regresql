@@ -89,10 +89,10 @@ func (s *Suite) initRegressHierarchy() {
 }
 
 func (s *Suite) createExpectedResults(pguri string) {
-	fmt.Printf("Connecting to '%s'\n", pguri)
 	db, err := sql.Open("postgres", pguri)
 
 	if err != nil {
+		fmt.Printf("Failed to connect to '%s'\n", pguri)
 		panic(err)
 	}
 	defer db.Close()
@@ -122,10 +122,10 @@ func (s *Suite) createExpectedResults(pguri string) {
 }
 
 func (s *Suite) testQueries(pguri string) {
-	fmt.Printf("Connecting to '%s'\n", pguri)
 	db, err := sql.Open("postgres", pguri)
 
 	if err != nil {
+		fmt.Printf("Failed to connect to '%s'\n", pguri)
 		panic(err)
 	}
 	defer db.Close()
