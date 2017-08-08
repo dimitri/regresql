@@ -34,10 +34,47 @@ func Init(root string, pguri string) {
 	suite.Println()
 
 	fmt.Println("")
+	fmt.Println(`Empty test plans have been created in '%s'.
+Edit the plans to add query binding values, then run 
+
+  regresql update
+
+to create the expected regression files for your test plans. Plans are
+simple YAML files containing multiple set of query parameter bindings. The
+default plan files contain a single entry named "1", you can rename the test
+case and add a value for each parameter. `,
+		suite.PlanDir)
+}
+
+// PlanQueries create query plans for queries found in the root repository
+func PlanQueries(root string) {
+	suite := Walk(root)
+	config, err := suite.readConfig()
+
+	if err != nil {
+		fmt.Printf(err.Error())
+		os.Exit(3)
+	}
+
+	if err := TestConnectionString(config.PgUri); err != nil {
+		fmt.Printf(err.Error())
+		os.Exit(2)
+	}
+
+	if err := suite.initRegressHierarchy(); err != nil {
+		fmt.Printf(err.Error())
+		os.Exit(11)
+	}
+
+	fmt.Println("")
+	fmt.Println("The RegreSQL Test Suite now contains:")
+	suite.Println()
+
+	fmt.Println("")
 	fmt.Println(`Empty test plans have been created.
 Edit the plans to add query binding values, then run 
 
-  regresql update [ -C directory ]
+  regresql update
 
 to create the expected regression files for your test plans. Plans are
 simple YAML files containing multiple set of query parameter bindings. The
@@ -71,9 +108,9 @@ func Update(root string) {
 	fmt.Println(`Expected files have now been created.
 You can run regression tests for your SQL queries with the command
 
-  regresql test [ -C directory ]
+  regresql test
 
-When you add new queries to your code repository, run 'regresql init' to
+When you add new queries to your code repository, run 'regresql plan' to
 create the missing test plans, edit them to add test parameters, and then
 run 'regresql update' to have expected data files to test against.
 

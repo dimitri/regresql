@@ -33,9 +33,12 @@ command and shows our structure organisation:
 
 */
 type Suite struct {
-	Root       string
-	RegressDir string
-	Dirs       []Folder
+	Root        string
+	RegressDir  string
+	Dirs        []Folder
+	PlanDir     string
+	ExpectedDir string
+	OutDir      string
 }
 
 /*
@@ -49,8 +52,12 @@ type Folder struct {
 
 // newSuite creates a new Suite instance
 func newSuite(root string) *Suite {
-	regressdir := filepath.Join(root, "regresql")
-	return &Suite{root, regressdir, []Folder{}}
+	var folders []Folder
+	regressDir := filepath.Join(root, "regresql")
+	planDir := filepath.Join(root, "regresql", "plans")
+	expectedDir := filepath.Join(root, "regresql", "expected")
+	outDir := filepath.Join(root, "regresql", "out")
+	return &Suite{root, regressDir, folders, planDir, expectedDir, outDir}
 }
 
 // newFolder created a new Folder instance
@@ -115,7 +122,7 @@ func (s *Suite) Println() {
 // structure in its own space.
 func (s *Suite) initRegressHierarchy() error {
 	for _, folder := range s.Dirs {
-		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
+		rdir := filepath.Join(s.PlanDir, folder.Dir)
 
 		if err := maybeMkdirAll(rdir); err != nil {
 			return fmt.Errorf("Failed to create test plans directory: %s", err)
@@ -151,8 +158,8 @@ func (s *Suite) createExpectedResults(pguri string) error {
 	fmt.Println("Writing expected Result Sets:")
 
 	for _, folder := range s.Dirs {
-		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
-		edir := filepath.Join(s.RegressDir, "expected", folder.Dir)
+		rdir := filepath.Join(s.PlanDir, folder.Dir)
+		edir := filepath.Join(s.ExpectedDir, folder.Dir)
 		maybeMkdirAll(edir)
 
 		fmt.Printf("  %s\n", edir)
@@ -197,9 +204,9 @@ func (s *Suite) testQueries(pguri string) error {
 	t.Header(0)
 
 	for _, folder := range s.Dirs {
-		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
-		edir := filepath.Join(s.RegressDir, "expected", folder.Dir)
-		odir := filepath.Join(s.RegressDir, "out", folder.Dir)
+		rdir := filepath.Join(s.PlanDir, folder.Dir)
+		edir := filepath.Join(s.ExpectedDir, folder.Dir)
+		odir := filepath.Join(s.OutDir, folder.Dir)
 		maybeMkdirAll(odir)
 
 		for _, name := range folder.Files {

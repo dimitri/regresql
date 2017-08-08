@@ -38,6 +38,11 @@ Basic usage or regresql:
     The -C option changes current directory to *dir* before running the
     command.
   
+  - `regresql plan [ -C dir ]`
+  
+    Create query plan files for all queries. Run that command when you add
+    new queries to your repository.
+  
   - `regresql update [ -C dir ]`
   
     Updates the *expected* files from the queries, considering that the
