@@ -14,6 +14,12 @@ import (
 	"github.com/theherk/viper" // fork with write support
 )
 
+/*
+A query plan associates a Query parsed from a Path (name of the file on
+disk) and a list of set of parameters used to run the query. Each set of
+parameters as a name in Names[i] and a list of bindings in Bindings[i]. When
+the query is executed we store its output in ResultSets[i].
+*/
 type Plan struct {
 	Query      *Query
 	Path       string // the file path where we read the Plan from
@@ -22,6 +28,8 @@ type Plan struct {
 	ResultSets []ResultSet
 }
 
+// CreateEmptyPlan creates a YAML file where to store the set of parameters
+// associated with a query.
 func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 	var names []string
 	var bindings []map[string]string
@@ -52,6 +60,8 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 	return plan, nil
 }
 
+// GetPlan instanciates a Plan from a Query, parsing a set of actual
+// parameters when it exists.
 func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	var plan *Plan
 	pfile := getPlanPath(q, planDir)
@@ -156,6 +166,8 @@ func (p *Plan) Execute(db *sql.DB) error {
 	return nil
 }
 
+// WriteResultSets serialize the result of running a query, as a Pretty
+// Printed output (comparable to a simplified `psql` output)
 func (p *Plan) WriteResultSets(dir string) error {
 	for i, rs := range p.ResultSets {
 		rsFileName := getResultSetPath(p, dir, i)

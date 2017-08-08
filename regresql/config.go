@@ -11,6 +11,9 @@ import (
 	"github.com/theherk/viper" // fork with write support
 )
 
+// Config structure is useful to store the PostgreSQL connection string, and
+// also remember the code root directory, which as of now is always either
+// ./ or the -C command line parameter.
 type config struct {
 	Root  string
 	PgUri string

@@ -12,12 +12,19 @@ import (
 	_ "github.com/lib/pq"
 )
 
+/*
+A ResultSet stores the result of a Query in Filename, with Cols and Rows
+separated.
+*/
 type ResultSet struct {
 	Cols     []string
 	Rows     [][]interface{}
 	Filename string
 }
 
+// TestConnectionString connects to PostgreSQL with pguri and issue a single
+// query (select 1"), because some errors (such as missing SSL certificates)
+// only happen at query time.
 func TestConnectionString(pguri string) error {
 	fmt.Printf("Connecting to '%s'… ", pguri)
 	db, err := sql.Open("postgres", pguri)
@@ -38,6 +45,8 @@ func TestConnectionString(pguri string) error {
 	return nil
 }
 
+// QueryDB runs the query against the db database connection, and returns a
+// ResultSet
 func QueryDB(db *sql.DB, query string, args ...interface{}) (*ResultSet, error) {
 	if db == nil {
 		return nil, errors.New("db is nil")
@@ -74,11 +83,13 @@ func QueryDB(db *sql.DB, query string, args ...interface{}) (*ResultSet, error) 
 	return &ResultSet{cols, res, ""}, nil
 }
 
-// ResultSet pretty printer, ala psql (much simplified)
+// Println outputs to standard output a Pretty Printed result set.
 func (r *ResultSet) Println() {
 	fmt.Println(r.PrettyPrint())
 
 }
+
+// PrettyPrint pretty prints a result set and returns it as a string
 func (r *ResultSet) PrettyPrint() string {
 	var b bytes.Buffer
 
@@ -136,6 +147,8 @@ func (r *ResultSet) PrettyPrint() string {
 	return b.String()
 }
 
+// Writes the Result Set r to filename, overwriting it if already exists
+// when overwrite is true
 func (r *ResultSet) Write(filename string, overwrite bool) error {
 	var f *os.File
 	var err error
@@ -182,6 +195,7 @@ func (r *ResultSet) Write(filename string, overwrite bool) error {
 	return nil
 }
 
+// valueToString is an helper function for the Pretty Printer
 func valueToString(value interface{}) string {
 	var s string
 	switch value.(type) {

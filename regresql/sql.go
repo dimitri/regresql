@@ -6,10 +6,23 @@ import (
 	"regexp"
 )
 
+// Regular Expression to find query parameters in SQL query files, as per
+// the psql support for variables:
+// https://www.postgresql.org/docs/9.6/static/app-psql.html#APP-PSQL-VARIABLES
 const (
 	psqlVarRE = `:['"]?([A-Za-z][A-Za-z0-9]*)['"]?`
 )
 
+/*
+
+A query instances represents an SQL query, read from Path filename and
+stored raw as the Text slot. The query text is “parsed” into the Query slot,
+and parameters are extracted into both the Vars slot and the Params slot.
+
+    SELECT * FROM foo WHERE a = :a and b between :a and :b;
+
+In the previous query, we would have Vars = [a b] and Params = [a a b].
+*/
 type Query struct {
 	Path   string
 	Text   string   // original query text

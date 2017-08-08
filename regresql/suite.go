@@ -10,26 +10,59 @@ import (
 	"github.com/mndrix/tap-go"
 )
 
+/*
+Suite implements a test suite, which is found in the Root directory and
+contains a list of Dirs folders, each containing a list of SQL query files.
+The RegressDir slot contains the directory where regresql stores its files:
+the query plans with bound parameters, their expected outputs and the actual
+results obtained when running `regresql test`.
+
+Rather than handling a fully recursive data structure, which isn't necessary
+for our endeavours, we maintain a fixed two-levels data structure. The
+Printf() method dipatched on a Suite method is callable from the main
+command and shows our structure organisation:
+
+    $ regresql list
+    .
+      src/sql/
+        album-by-artist.sql
+        album-tracks.sql
+        artist.sql
+        genre-topn.sql
+        genre-tracks.sql
+
+*/
 type Suite struct {
 	Root       string
 	RegressDir string
 	Dirs       []Folder
 }
 
+/*
+Folder implements a directory from the source repository wherein we found
+some SQL files. Folder are only implemented as part of a Suite instance.
+*/
 type Folder struct {
 	Dir   string
 	Files []string
 }
 
+// newSuite creates a new Suite instance
 func newSuite(root string) *Suite {
 	regressdir := filepath.Join(root, "regresql")
 	return &Suite{root, regressdir, []Folder{}}
 }
 
+// newFolder created a new Folder instance
 func newFolder(path string) *Folder {
 	return &Folder{path, []string{}}
 }
 
+// appendPath appends a path to our Suite instance.
+//
+// appendPath first searches in s if we already have seen the relative
+// directory of path, adding it to s if not. Then it adds the base name of
+// path to the Folder.
 func (s *Suite) appendPath(path string) *Suite {
 	dir, _ := filepath.Rel(s.Root, filepath.Dir(path))
 	var name string = filepath.Base(path)
@@ -50,6 +83,8 @@ func (s *Suite) appendPath(path string) *Suite {
 	return s
 }
 
+// Walk walks the root directory recursively in search of *.sql files and
+// returns a Suite instance representing the traversal.
 func Walk(root string) *Suite {
 	suite := newSuite(root)
 
@@ -64,6 +99,7 @@ func Walk(root string) *Suite {
 	return suite
 }
 
+// Println(Suite) pretty prints the Suite instance to standard out.
 func (s *Suite) Println() {
 	fmt.Printf("%s\n", s.Root)
 	for _, folder := range s.Dirs {
@@ -74,6 +110,9 @@ func (s *Suite) Println() {
 	}
 }
 
+// initRegressHierarchy walks a Suite instance s and creates the regresql
+// plans directories for the queries found in s, copying the directory
+// structure in its own space.
 func (s *Suite) initRegressHierarchy() error {
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
@@ -99,6 +138,8 @@ func (s *Suite) initRegressHierarchy() error {
 	return nil
 }
 
+// createExpectedResults walks the s Suite instance and runs its queries,
+// storing the results in the expected files.
 func (s *Suite) createExpectedResults(pguri string) error {
 	db, err := sql.Open("postgres", pguri)
 
@@ -140,6 +181,10 @@ func (s *Suite) createExpectedResults(pguri string) error {
 	return nil
 }
 
+// testQueries walks the s Suite instance and runs queries against the plans
+// and sotores results in the out directory for manual inspection if
+// necessary, It then compares the actual output to the expected output and
+// reports a TAP output.
 func (s *Suite) testQueries(pguri string) error {
 	db, err := sql.Open("postgres", pguri)
 

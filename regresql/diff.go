@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 )
 
+//readLines reads filename contents and returns a list of strings
 func readLines(filename string) ([]string, error) {
 	data, err := ioutil.ReadFile(filename)
 
@@ -19,6 +20,7 @@ func readLines(filename string) ([]string, error) {
 	return lines, nil
 }
 
+// DiffFiles returns a unified diff result with c lines of context
 func DiffFiles(a string, b string, c int) (string, error) {
 	var a_lines, b_lines []string
 	var r string
@@ -35,6 +37,8 @@ func DiffFiles(a string, b string, c int) (string, error) {
 	return DiffLines(a, b, a_lines, b_lines, c), nil
 }
 
+// DiffLines compares two lists of strings and reports differences in the
+// unified format. from and to are the files to report in the diff output.
 func DiffLines(from string, to string, a []string, b []string, c int) string {
 	diff := difflib.UnifiedDiff{
 		A:        a,

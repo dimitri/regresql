@@ -5,6 +5,14 @@ import (
 	"os"
 )
 
+/*
+Init initializes a code repository for RegreSQL processing.
+
+That means creating the ./regresql/ directory, walking the code repository
+in search of *.sql files, and creating the associated empty plan files. If
+the plan files already exists, we simply skip them, thus allowing to run
+init again on an existing repository to create missing plan files.
+*/
 func Init(root string, pguri string) {
 	if err := TestConnectionString(pguri); err != nil {
 		fmt.Printf(err.Error())
@@ -37,6 +45,9 @@ default plan files contain a single entry named "1", you can rename the test
 case and add a value for each parameter. `)
 }
 
+/*
+Update updates the expected files from the queries and their parameters.
+*/
 func Update(root string) {
 	suite := Walk(root)
 	config, err := suite.readConfig()
@@ -72,6 +83,10 @@ the regresql update command again to reset the expected output files.
  `)
 }
 
+/*
+Test runs the queries and compare their results to the previously created
+expected files (see Update()), reporting a TAP output to standard output.
+*/
 func Test(root string) {
 	suite := Walk(root)
 	config, err := suite.readConfig()
@@ -92,6 +107,7 @@ func Test(root string) {
 	}
 }
 
+// List walks a repository, builds a Suite instance and pretty prints it.
 func List(dir string) {
 	suite := Walk(dir)
 	suite.Println()

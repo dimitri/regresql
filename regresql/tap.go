@@ -8,6 +8,15 @@ import (
 	"github.com/mndrix/tap-go"
 )
 
+/*
+CompareResultsSets load the expected result set and compares it with the
+given Plan's ResultSet, and fills in a tap.T test output.
+
+The test is considered passed when the diff is empty.
+
+Rather than returning an error in case something wrong happens, we register
+a diagnostic against the tap output and fail the test case.
+*/
 func (p *Plan) CompareResultSets(regressDir string, expectedDir string, t *tap.T) {
 	for i, rs := range p.ResultSets {
 		testName := strings.TrimPrefix(rs.Filename, regressDir+"/out/")
