@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/dimitri/regresql/regresql"
 	"github.com/spf13/cobra"
@@ -17,9 +18,10 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "list candidates SQL files",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("list called on %s\n", cwd)
-
-		checkDirectory(cwd)
+		if err := checkDirectory(cwd); err != nil {
+			fmt.Printf(err.Error())
+			os.Exit(1)
+		}
 		regresql.List(cwd)
 	},
 }

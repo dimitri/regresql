@@ -20,18 +20,19 @@ func (s *Suite) getRegressConfigFile() string {
 	return filepath.Join(s.RegressDir, "regress.yaml")
 }
 
-func (s *Suite) createRegressDir() {
+func (s *Suite) createRegressDir() error {
 	stat, err := os.Stat(s.RegressDir)
 	if err != nil || !stat.IsDir() {
 		// Only create regressdir when it doesn't exists already
 		fmt.Printf("Creating directory '%s'\n", s.RegressDir)
 		err := os.Mkdir(s.RegressDir, 0755)
 		if err != nil {
-			panic(err)
+			return err
 		}
 	} else {
 		fmt.Printf("Directory '%s' already exists\n", s.RegressDir)
 	}
+	return nil
 }
 
 func (s *Suite) setupConfig(pguri string) {
@@ -45,7 +46,7 @@ func (s *Suite) setupConfig(pguri string) {
 	v.WriteConfigAs(configFile)
 }
 
-func (s *Suite) readConfig() config {
+func (s *Suite) readConfig() (config, error) {
 	var config config
 	v := viper.New()
 	v.SetConfigType("yaml")
@@ -54,11 +55,13 @@ func (s *Suite) readConfig() config {
 	data, err := ioutil.ReadFile(configFile)
 
 	if err != nil {
-		panic(err)
+		return config, fmt.Errorf("Failed to read config '%s': ",
+			configFile,
+			err)
 	}
 
 	v.ReadConfig(bytes.NewBuffer(data))
 	v.Unmarshal(&config)
 
-	return config
+	return config, nil
 }

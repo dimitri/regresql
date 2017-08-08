@@ -19,16 +19,21 @@ type ResultSet struct {
 }
 
 func TestConnectionString(pguri string) error {
-	fmt.Printf("Trying to connect to %s\n", pguri)
+	fmt.Printf("Connecting to '%s'… ", pguri)
 	db, err := sql.Open("postgres", pguri)
 
 	if err != nil {
+		fmt.Println("✗")
 		return err
 	}
-
 	defer db.Close()
 
-	fmt.Println("Connected")
+	var args []interface{}
+	if _, err := QueryDB(db, "Select 1", args...); err != nil {
+		fmt.Println("✗")
+		return err
+	}
+	fmt.Println("✓")
 
 	return nil
 }
@@ -138,7 +143,11 @@ func (r *ResultSet) Write(filename string, overwrite bool) error {
 		f, err = os.Create(filename)
 
 		if err != nil {
-			panic(err)
+			e := fmt.Errorf(
+				"Failed to write result set '%s': %s\n",
+				filename,
+				err)
+			return e
 		}
 		defer f.Close()
 
@@ -150,13 +159,21 @@ func (r *ResultSet) Write(filename string, overwrite bool) error {
 		f, err = os.OpenFile(filename, os.O_WRONLY, 0644)
 
 		if err != nil {
-			panic(err)
+			e := fmt.Errorf(
+				"Failed to open result set '%s': %s\n",
+				filename,
+				err)
+			return e
 		}
 
 		err = f.Truncate(0)
 
 		if err != nil {
-			panic(err)
+			e := fmt.Errorf(
+				"Failed to truncate result set file '%s': %s\n",
+				filename,
+				err)
+			return e
 		}
 		defer f.Close()
 

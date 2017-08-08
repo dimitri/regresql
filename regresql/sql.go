@@ -20,14 +20,19 @@ type Query struct {
 
 // Parse a SQL file and returns a Query instance, with variables used in the
 // query separated in the Query.Vars map.
-func parseQueryFile(queryPath string) *Query {
+func parseQueryFile(queryPath string) (*Query, error) {
 	sqlbytes, err := ioutil.ReadFile(queryPath)
 	if err != nil {
-		panic(err)
+		var q *Query
+		e := fmt.Errorf(
+			"Failed to parse query file '%s': %s\n",
+			queryPath,
+			err)
+		return q, e
 	}
 	queryString := string(sqlbytes)
 
-	return parseQueryString(queryPath, queryString)
+	return parseQueryString(queryPath, queryString), nil
 }
 
 // let's consider as an example the following SQL query:

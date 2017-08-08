@@ -13,7 +13,26 @@ func (p *Plan) CompareResultSets(regressDir string, expectedDir string, t *tap.T
 		testName := strings.TrimPrefix(rs.Filename, regressDir+"/out/")
 		expectedFilename := filepath.Join(expectedDir,
 			filepath.Base(rs.Filename))
-		diff := DiffFiles(expectedFilename, rs.Filename, 3)
+		diff, err := DiffFiles(expectedFilename, rs.Filename, 3)
+
+		if err != nil {
+			t.Diagnostic(
+				fmt.Sprintf(`Query File: '%s'
+Bindings File: '%s'
+Bindings Name: '%s'
+Query Parameters: '%v'
+Expected Result File: '%s'
+Actual Result File: '%s'
+
+Failed to compare results: %s`,
+					p.Query.Path,
+					p.Path,
+					p.Names[i],
+					p.Bindings[i],
+					expectedFilename,
+					rs.Filename,
+					err.Error()))
+		}
 
 		if diff != "" {
 			t.Diagnostic(
@@ -24,7 +43,14 @@ Query Parameters: '%v'
 Expected Result File: '%s'
 Actual Result File: '%s'
 
-%s`, p.Query.Path, p.Path, p.Names[i], p.Bindings[i], expectedFilename, rs.Filename, diff))
+%s`,
+					p.Query.Path,
+					p.Path,
+					p.Names[i],
+					p.Bindings[i],
+					expectedFilename,
+					rs.Filename,
+					diff))
 		}
 		t.Ok(diff == "", testName)
 	}

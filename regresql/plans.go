@@ -22,13 +22,14 @@ type Plan struct {
 	ResultSets []ResultSet
 }
 
-func (q *Query) CreateEmptyPlan(dir string) *Plan {
+func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 	var names []string
 	var bindings []map[string]string
 	pfile := getPlanPath(q, dir)
 
 	if _, err := os.Stat(pfile); !os.IsNotExist(err) {
-		panic(fmt.Sprintf("Fatal: plan file '%s' already exists", pfile))
+		var p Plan
+		return &p, fmt.Errorf("Plan file '%s' already exists", pfile)
 	}
 
 	if len(q.Vars) > 0 {
@@ -48,15 +49,23 @@ func (q *Query) CreateEmptyPlan(dir string) *Plan {
 	plan := &Plan{q, pfile, names, bindings, []ResultSet{}}
 	plan.Write()
 
-	return plan
+	return plan, nil
 }
 
-func (q *Query) GetPlan(planDir string) *Plan {
+func (q *Query) GetPlan(planDir string) (*Plan, error) {
+	var plan *Plan
 	pfile := getPlanPath(q, planDir)
 
 	if _, err := os.Stat(pfile); os.IsNotExist(err) {
-		return &Plan{q, pfile,
-			[]string{}, []map[string]string{}, []ResultSet{}}
+		if len(q.Params) == 0 {
+			// no Params, no Plan file, it's good
+			return &Plan{q, pfile,
+				[]string{},
+				[]map[string]string{},
+				[]ResultSet{}}, nil
+		}
+		e := fmt.Errorf("Failed to get plan '%s': %s\n", pfile, err)
+		return plan, e
 	}
 
 	v := viper.New()
@@ -65,7 +74,8 @@ func (q *Query) GetPlan(planDir string) *Plan {
 	data, err := ioutil.ReadFile(pfile)
 
 	if err != nil {
-		panic(err)
+		e := fmt.Errorf("Failed to read file '%s': %s\n", pfile, err)
+		return plan, e
 	}
 
 	v.ReadConfig(bytes.NewBuffer(data))
@@ -102,25 +112,27 @@ func (q *Query) GetPlan(planDir string) *Plan {
 	// don't forget to finish the current map when out of the loop
 	bindings = append(bindings, current_map)
 
-	return &Plan{q, pfile, names, bindings, []ResultSet{}}
+	return &Plan{q, pfile, names, bindings, []ResultSet{}}, nil
 }
 
 // Executes a plan and returns the filepath where the output has been
 // written, for later comparing
-func (p *Plan) Execute(db *sql.DB) {
+func (p *Plan) Execute(db *sql.DB) error {
 	if len(p.Query.Params) == 0 {
 		// this Query has no plans, so don't loop over the bindings
 		args := make([]interface{}, 0)
 		res, err := QueryDB(db, p.Query.Query, args...)
 
 		if err != nil {
-			fmt.Printf("Error executing\n%s", p.Query.Query)
-			panic(err)
+			e := fmt.Errorf("Error executing query: %s\n%s\n",
+				err,
+				p.Query.Query)
+			return e
 		}
 		result := make([]ResultSet, 1)
 		result[0] = *res
 		p.ResultSets = result
-		return
+		return nil
 	}
 
 	// general case, with a plan and a set of Bindings to go through
@@ -131,25 +143,34 @@ func (p *Plan) Execute(db *sql.DB) {
 		res, err := QueryDB(db, sql, args...)
 
 		if err != nil {
-			fmt.Printf("Error executing\n%s\nwith params: %v\n",
-				sql, args)
-			panic(err)
+			e := fmt.Errorf(
+				"Error executing query with params: %v\n%s\n%s",
+				args,
+				err,
+				sql)
+			return e
 		}
 		result[i] = *res
 	}
 	p.ResultSets = result
+	return nil
 }
 
-func (p *Plan) WriteResultSets(dir string) {
+func (p *Plan) WriteResultSets(dir string) error {
 	for i, rs := range p.ResultSets {
 		rsFileName := getResultSetPath(p, dir, i)
 		err := rs.Write(rsFileName, true)
 
 		if err != nil {
-			panic(err)
+			e := fmt.Errorf(
+				"Failed to write result set '%s': %s\n",
+				rsFileName,
+				err)
+			return e
 		}
 		p.ResultSets[i].Filename = rsFileName
 	}
+	return nil
 }
 
 // Write a plan to disk in YAML format, thanks to Viper.

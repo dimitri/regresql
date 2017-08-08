@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/dimitri/regresql/regresql"
 	"github.com/spf13/cobra"
 )
@@ -10,7 +13,10 @@ var updateCmd = &cobra.Command{
 	Use:   "update [flags]",
 	Short: "Creates or updates the expected output files",
 	Run: func(cmd *cobra.Command, args []string) {
-		checkDirectory(cwd)
+		if err := checkDirectory(cwd); err != nil {
+			fmt.Printf(err.Error())
+			os.Exit(1)
+		}
 		regresql.Update(cwd)
 	},
 }

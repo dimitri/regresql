@@ -74,30 +74,40 @@ func (s *Suite) Println() {
 	}
 }
 
-func (s *Suite) initRegressHierarchy() {
+func (s *Suite) initRegressHierarchy() error {
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
-		maybeMkdirAll(rdir)
+
+		if err := maybeMkdirAll(rdir); err != nil {
+			return fmt.Errorf("Failed to create test plans directory: %s", err)
+		}
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 
-			q := parseQueryFile(qfile)
-			q.CreateEmptyPlan(rdir)
+			q, err := parseQueryFile(qfile)
+
+			if err != nil {
+				return err
+			}
+
+			if _, err := q.CreateEmptyPlan(rdir); err != nil {
+				fmt.Println("Skipping:", err)
+			}
 		}
 	}
+	return nil
 }
 
-func (s *Suite) createExpectedResults(pguri string) {
+func (s *Suite) createExpectedResults(pguri string) error {
 	db, err := sql.Open("postgres", pguri)
 
 	if err != nil {
-		fmt.Printf("Failed to connect to '%s'\n", pguri)
-		panic(err)
+		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
 
-	fmt.Println("Wrote expected Result Sets:")
+	fmt.Println("Writing expected Result Sets:")
 
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.RegressDir, "plans", folder.Dir)
@@ -109,8 +119,16 @@ func (s *Suite) createExpectedResults(pguri string) {
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 
-			q := parseQueryFile(qfile)
-			p := q.GetPlan(rdir)
+			q, err := parseQueryFile(qfile)
+
+			if err != nil {
+				return err
+			}
+
+			p, err := q.GetPlan(rdir)
+			if err != nil {
+				return err
+			}
 			p.Execute(db)
 			p.WriteResultSets(edir)
 
@@ -119,14 +137,14 @@ func (s *Suite) createExpectedResults(pguri string) {
 			}
 		}
 	}
+	return nil
 }
 
-func (s *Suite) testQueries(pguri string) {
+func (s *Suite) testQueries(pguri string) error {
 	db, err := sql.Open("postgres", pguri)
 
 	if err != nil {
-		fmt.Printf("Failed to connect to '%s'\n", pguri)
-		panic(err)
+		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
 
@@ -142,17 +160,30 @@ func (s *Suite) testQueries(pguri string) {
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 
-			q := parseQueryFile(qfile)
-			p := q.GetPlan(rdir)
-			p.Execute(db)
-			p.WriteResultSets(odir)
+			q, err := parseQueryFile(qfile)
+
+			if err != nil {
+				return err
+			}
+
+			p, err := q.GetPlan(rdir)
+			if err != nil {
+				return err
+			}
+			if err := p.Execute(db); err != nil {
+				return err
+			}
+			if err := p.WriteResultSets(odir); err != nil {
+				return err
+			}
 			p.CompareResultSets(s.RegressDir, edir, t)
 		}
 	}
+	return nil
 }
 
 // Only create dir(s) when it doesn't exists already
-func maybeMkdirAll(dir string) {
+func maybeMkdirAll(dir string) error {
 	stat, err := os.Stat(dir)
 	if err != nil || !stat.IsDir() {
 		fmt.Printf("Creating directory '%s'\n", dir)
@@ -160,7 +191,8 @@ func maybeMkdirAll(dir string) {
 		err := os.MkdirAll(dir, 0755)
 
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
+	return nil
 }

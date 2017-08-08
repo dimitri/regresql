@@ -6,13 +6,13 @@ import (
 )
 
 // Check that given path string is a directory that exists
-func checkDirectory(cwd string) {
+func checkDirectory(cwd string) error {
 	stat, err := os.Stat(cwd)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("No directory found at '%s'\n", cwd)
 	}
 	if !stat.IsDir() {
-		panic(fmt.Sprintf("%s is not a directory!", cwd))
+		return fmt.Errorf("Not a directory: '%s'\n", cwd)
 	}
-	return
+	return nil
 }

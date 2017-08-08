@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/dimitri/regresql/regresql"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +19,10 @@ var initCmd = &cobra.Command{
 	Short: "Initialize regresql for use in your project",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		checkDirectory(cwd)
+		if err := checkDirectory(cwd); err != nil {
+			fmt.Printf(err.Error())
+			os.Exit(1)
+		}
 		pguri := args[0]
 		regresql.Init(cwd, pguri)
 	},
