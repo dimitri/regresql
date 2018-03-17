@@ -92,7 +92,7 @@ RegreSQL needs the following files and directories to run:
     running the regression tests and the top level directory where to find
     the SQL files to test against.
   
-  - `./regresql/expected/path/to/query.out`
+  - `./regresql/expected/path/to/query.yaml`
   
     For each file *query.sql* found in your source tree, RegreSQL creates a
     subpath in `./regresql/plans` with a *query.yaml* file. This YAML file
@@ -105,7 +105,7 @@ RegreSQL needs the following files and directories to run:
     subpath in `./regresql/expected` directory and stores in *query.out* the
     expected result set of the query,
     
-  - `./regresql/out/path/to/query.out`
+  - `./regresql/out/path/to/query.sql`
   
     The result of running the query in *query.sql* is stored in *query.out*
     in the `regresql/out` directory subpath for it, so that it is possible
