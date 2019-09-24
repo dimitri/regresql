@@ -130,7 +130,7 @@ $ regresql list
 After having done the following commands:
 
 ```
-$ regresql init postgres:///chinook?requiressl=disable
+$ regresql init postgres:///chinook?sslmode=disable
 ...
 
 $ regresql update
