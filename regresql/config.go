@@ -58,7 +58,7 @@ func (s *Suite) readConfig() (config, error) {
 	data, err := ioutil.ReadFile(configFile)
 
 	if err != nil {
-		return config, fmt.Errorf("Failed to read config '%s': ",
+		return config, fmt.Errorf("Failed to read config '%s': %s",
 			configFile,
 			err)
 	}
