@@ -13,6 +13,15 @@ func TestParseQueryString(t *testing.T) {
 	}
 }
 
+func TestParseQueryStringWithTypeCast(t *testing.T) {
+	queryString := `select name::text from foo where id = :user_id`
+	q := parseQueryString("no/path", queryString)
+
+	if len(q.Vars) != 1 || q.Vars[0] != "user_id" {
+		t.Error("Expected only [\"user_id\"], got ", q.Vars)
+	}
+}
+
 func TestPrepareOneParam(t *testing.T) {
 	queryString := `select * from foo where id = :id`
 	q := parseQueryString("no/path", queryString)
