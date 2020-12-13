@@ -5,11 +5,11 @@ import (
 )
 
 func TestParseQueryString(t *testing.T) {
-	queryString := `select * from foo where id = :id`
+	queryString := `select * from foo where id = :user_id`
 	q := parseQueryString("no/path", queryString)
 
-	if len(q.Vars) != 1 || q.Vars[0] != "id" {
-		t.Error("Expected [\"id\"], got ", q.Vars)
+	if len(q.Vars) != 1 || q.Vars[0] != "user_id" {
+		t.Error("Expected [\"user_id\"], got ", q.Vars)
 	}
 }
 
