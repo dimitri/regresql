@@ -10,7 +10,7 @@ import (
 // the psql support for variables:
 // https://www.postgresql.org/docs/9.6/static/app-psql.html#APP-PSQL-VARIABLES
 const (
-	psqlVarRE = `:['"]?([A-Za-z][A-Za-z0-9]*)['"]?`
+	psqlVarRE = `[^:]:['"]?([A-Za-z][A-Za-z0-9_]*)['"]?`
 )
 
 /*
