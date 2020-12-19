@@ -1,8 +1,9 @@
 package regresql
 
 import (
+	"bufio"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"regexp"
 )
 
@@ -25,27 +26,33 @@ In the previous query, we would have Vars = [a b] and Params = [a a b].
 */
 type Query struct {
 	Path   string
+	Name   string
 	Text   string   // original query text
 	Query  string   // "normalized" SQL query for lib/pq
 	Vars   []string // variable names used in the query text
 	Params []string // ordered list of params used in the query
 }
 
-// Parse a SQL file and returns a Query instance, with variables used in the
-// query separated in the Query.Vars map.
-func parseQueryFile(queryPath string) (*Query, error) {
-	sqlbytes, err := ioutil.ReadFile(queryPath)
+// Parse a SQL file and returns map of Queries instances, with variables
+// used in the query separated in the Query.Vars map.
+func parseQueryFile(queryPath string) (map[string]*Query, error) {
+	f, err := os.Open(queryPath)
 	if err != nil {
-		var q *Query
-		e := fmt.Errorf(
-			"Failed to parse query file '%s': %s\n",
-			queryPath,
-			err)
-		return q, e
+		return nil, fmt.Errorf("Failed to open query file '%s: %s\n", queryPath, err.Error())
 	}
-	queryString := string(sqlbytes)
 
-	return parseQueryString(queryPath, queryString), nil
+	scanner := &Scanner{}
+	newQueries := scanner.Run(bufio.NewScanner(f))
+
+	queries := make(map[string]*Query)
+
+	for name, query := range newQueries {
+		query := parseQueryString(queryPath, name, query)
+
+		queries[name] = query
+	}
+
+	return queries, nil
 }
 
 // let's consider as an example the following SQL query:
@@ -61,7 +68,7 @@ func parseQueryFile(queryPath string) (*Query, error) {
 //
 // the idea is that then we can replace the param names by their values
 // thanks to the plan test bindings given by the user (see p.Execute)
-func parseQueryString(queryPath string, queryString string) *Query {
+func parseQueryString(queryPath, queryName, queryString string) *Query {
 	// find a uses of variables in the SQL query text, and put then in a
 	// map so that we get each of them only once, even when used several
 	// times in the same query
@@ -95,7 +102,7 @@ func parseQueryString(queryPath string, queryString string) *Query {
 	}
 
 	// now build and return our Query
-	return &Query{queryPath, queryString, sql, vars, params}
+	return &Query{queryPath, queryName, queryString, sql, vars, params}
 }
 
 // Prepare an args... interface{} for Query from given bindings

@@ -4,11 +4,11 @@ The `regresql` tool implement a regression testing facility for SQL queries,
 and supports the PostgreSQL database system. A regression test allows to
 ensure known results when the code is edited. To enable that we need:
 
-  - some code to test, here SQL queries, each in its own file,
+  - some code to test, here SQL queries
   - a known result set for each SQL query,
   - a regression driver that runs queries again and check their result
     against the known expected result set.
-    
+
 The RegreSQL tool is that regression driver. It helps with creating the
 expected result set for each query and then running query files again to
 check that the results are still the same.
@@ -21,7 +21,7 @@ against a known PostgreSQL database content.
 The `regresql` tool is written in Go, so:
 
     go get github.com/dimitri/regresql
-    
+
 This command will compile and install the command in your `$GOPATH/bin`,
 which defaults to `~/go/bin`. See <https://golang.org/doc/install> if you're
 new to the Go language.
@@ -75,6 +75,17 @@ about
 [psql variables](https://www.postgresql.org/docs/current/static/app-psql.html#APP-PSQL-VARIABLES) and
 their usage syntax and quoting rules: `:foo`, `:'foo'` and `:"foo"`.
 
+RegreSQL supports either single query per SQL file, or multiple queries in file. In latter case you have
+to tag/name the queries to enable the support.
+
+Example
+
+```
+-- name: my-sample-query
+SELECT count(*) FROM users
+```
+
+
 ## Test Suites
 
 By default a Test Suite is a source directory.
@@ -92,25 +103,28 @@ RegreSQL needs the following files and directories to run:
     running the regression tests and the top level directory where to find
     the SQL files to test against.
   
-  - `./regresql/expected/path/to/query.yaml`
+  - `./regresql/expected/path/to/file_query-name.yaml`
   
-    For each file *query.sql* found in your source tree, RegreSQL creates a
-    subpath in `./regresql/plans` with a *query.yaml* file. This YAML file
+    For each file *file.sql* found in your source tree, RegreSQL creates a
+    subpath in `./regresql/plans` with a *file_query-name.yaml* file. This YAML file
     contains query plans: that's a list of SQL parameters values to use when
     testing.
   
-  - `./regresql/expected/path/to/query.out`
+  - `./regresql/expected/path/to/file_query-name.out`
   
     For each file *query.sql* found in your source tree, RegreSQL creates a
-    subpath in `./regresql/expected` directory and stores in *query.out* the
+    subpath in `./regresql/expected` directory and stores in *file_query-name.out* the
     expected result set of the query,
     
-  - `./regresql/out/path/to/query.sql`
+  - `./regresql/out/path/to/file_query-name.sql`
   
-    The result of running the query in *query.sql* is stored in *query.out*
+    The result of running the query in *file_query-name.sql* is stored in *query.out*
     in the `regresql/out` directory subpath for it, so that it is possible
     to compare this result to the expected one in `regresql/expected`.
     
+In all cases `query_name` is replaced by the tagged query name. If not present, name
+`default` is used.
+
 ## Example
 
 In a small local application the command `regresql list` returns the
@@ -141,7 +155,7 @@ Now we have to edit the YAML plan files to add bindings, here's an example
 for a query using a single parameter, `:name`:
 
 ```
-$ cat src/sql/album-by-artist.sql
+$ cat src/sql/album_by_artist.sql
 -- name: list-albums-by-artist
 -- List the album titles and duration of a given artist
   select album.title as album,
@@ -153,7 +167,7 @@ $ cat src/sql/album-by-artist.sql
 group by album
 order by album;
 
-$ cat regresql/plans/src/sql/album-by-artist.yaml 
+$ cat regresql/plans/src/sql/album_by_artist_album-by-artist.yaml 
 "1":
   name: "Red Hot Chili Peppers"
 ```
@@ -164,12 +178,12 @@ And we can now run the tests:
 $ regresql test
 Connecting to 'postgres:///chinook?sslmode=disable'… ✓
 TAP version 13
-ok 1 - src/sql/album-by-artist.1.out
-ok 2 - src/sql/album-tracks.1.out
-ok 3 - src/sql/artist.1.out
-ok 4 - src/sql/genre-topn.top-3.out
-ok 5 - src/sql/genre-topn.top-1.out
-ok 6 - src/sql/genre-tracks.out
+ok 1 - src/sql/album-by-artist_album-by-artist.1.out
+ok 2 - src/sql/album-tracks_album-tracks.1.out
+ok 3 - src/sql/artist_top-artists-by-album.1.out
+ok 4 - src/sql/genre-topn_genre-top-n.top-3.out
+ok 5 - src/sql/genre-topn.genre-top-n.top-1.out
+ok 6 - src/sql/genre-tracks_tracks-by-genre.1.out
 ```
 
 We can see the following files have been created by the RegreSQL tool: 
