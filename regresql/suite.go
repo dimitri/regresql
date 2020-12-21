@@ -131,14 +131,15 @@ func (s *Suite) initRegressHierarchy() error {
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 
-			q, err := parseQueryFile(qfile)
-
+			queries, err := parseQueryFile(qfile)
 			if err != nil {
 				return err
 			}
 
-			if _, err := q.CreateEmptyPlan(rdir); err != nil {
-				fmt.Println("Skipping:", err)
+			for _, q := range queries {
+				if _, err := q.CreateEmptyPlan(rdir); err != nil {
+					fmt.Println("Skipping:", err)
+				}
 			}
 		}
 	}
@@ -167,21 +168,23 @@ func (s *Suite) createExpectedResults(pguri string) error {
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 
-			q, err := parseQueryFile(qfile)
-
+			queries, err := parseQueryFile(qfile)
 			if err != nil {
 				return err
 			}
 
-			p, err := q.GetPlan(rdir)
-			if err != nil {
-				return err
-			}
-			p.Execute(db)
-			p.WriteResultSets(edir)
+			for _, q := range queries {
 
-			for _, rs := range p.ResultSets {
-				fmt.Printf("    %s\n", filepath.Base(rs.Filename))
+				p, err := q.GetPlan(rdir)
+				if err != nil {
+					return err
+				}
+				p.Execute(db)
+				p.WriteResultSets(edir)
+
+				for _, rs := range p.ResultSets {
+					fmt.Printf("    %s\n", filepath.Base(rs.Filename))
+				}
 			}
 		}
 	}
@@ -212,23 +215,24 @@ func (s *Suite) testQueries(pguri string) error {
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 
-			q, err := parseQueryFile(qfile)
-
+			queries, err := parseQueryFile(qfile)
 			if err != nil {
 				return err
 			}
 
-			p, err := q.GetPlan(rdir)
-			if err != nil {
-				return err
+			for _, q := range queries {
+				p, err := q.GetPlan(rdir)
+				if err != nil {
+					return err
+				}
+				if err := p.Execute(db); err != nil {
+					return err
+				}
+				if err := p.WriteResultSets(odir); err != nil {
+					return err
+				}
+				p.CompareResultSets(s.RegressDir, edir, t)
 			}
-			if err := p.Execute(db); err != nil {
-				return err
-			}
-			if err := p.WriteResultSets(odir); err != nil {
-				return err
-			}
-			p.CompareResultSets(s.RegressDir, edir, t)
 		}
 	}
 	return nil
