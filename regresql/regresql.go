@@ -34,15 +34,15 @@ func Init(root string, pguri string) {
 	suite.Println()
 
 	fmt.Println("")
-	fmt.Printf(`Empty test plans have been created in '%s'.\n
-Edit the plans to add query binding values, then run\n
-\n
-  regresql update\n
-\n
-to create the expected regression files for your test plans. Plans are\n
-simple YAML files containing multiple set of query parameter bindings. The\n
-default plan files contain a single entry named "1", you can rename the test\n
-case and add a value for each parameter.\n `,
+	fmt.Printf(`Empty test plans have been created in '%s'.
+Edit the plans to add query binding values, then run
+
+  regresql update
+
+to create the expected regression files for your test plans. Plans are
+simple YAML files containing multiple set of query parameter bindings. The
+default plan files contain a single entry named "1", you can rename the test
+case and add a value for each parameter.`,
 		suite.PlanDir)
 }
 
@@ -71,7 +71,7 @@ func PlanQueries(root string) {
 	suite.Println()
 
 	fmt.Println("")
-	fmt.Println(`Empty test plans have been created.
+	fmt.Printf(`Empty test plans have been created.
 Edit the plans to add query binding values, then run 
 
   regresql update

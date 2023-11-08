@@ -208,6 +208,7 @@ func (p *Plan) Write() {
 func getPlanPath(q *Query, targetdir string) string {
 	planPath := filepath.Join(targetdir, filepath.Base(q.Path))
 	planPath = strings.TrimSuffix(planPath, path.Ext(planPath))
+	planPath = planPath + "_" + q.Name
 	planPath = planPath + ".yaml"
 
 	return planPath
