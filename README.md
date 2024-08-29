@@ -1,26 +1,26 @@
 # RegreSQL, Regression Testing your SQL queries
 
-The `regresql` tool implement a regression testing facility for SQL queries,
+The `regresql` tool implements a regression testing facility for SQL queries,
 and supports the PostgreSQL database system. A regression test allows to
 ensure known results when the code is edited. To enable that we need:
 
   - some code to test, here SQL queries, each in its own file,
   - a known result set for each SQL query,
-  - a regression driver that runs queries again and check their result
+  - a regression driver that runs queries again and checks their result
     against the known expected result set.
     
 The RegreSQL tool is that regression driver. It helps with creating the
 expected result set for each query and then running query files again to
 check that the results are still the same.
 
-Of course, for the results the be comparable the queries need to be run
+Of course, for the results to be comparable the queries need to be run
 against a known PostgreSQL database content.
 
 ## Installing
 
 The `regresql` tool is written in Go, so:
 
-    go get github.com/dimitri/regresql
+    go install github.com/dimitri/regresql
     
 This command will compile and install the command in your `$GOPATH/bin`,
 which defaults to `~/go/bin`. See <https://golang.org/doc/install> if you're
@@ -28,7 +28,7 @@ new to the Go language.
 
 ## Basic usage
 
-Basic usage or regresql:
+Basic usage of regresql:
 
   - `regresql init [ -C dir ]`
   
