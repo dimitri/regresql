@@ -3,7 +3,20 @@ package regresql
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
+
+// resolveRoot returns the directory that Walk should scan for SQL files.
+// When regress.yaml sets root to a non-trivial value (not "" or "."), that
+// value is interpreted as a path relative to the suite root (the directory
+// that contains regresql/).  Otherwise the suite root itself is used, which
+// preserves the existing behaviour.
+func resolveRoot(suiteRoot, configRoot string) string {
+	if configRoot == "" || configRoot == "." {
+		return suiteRoot
+	}
+	return filepath.Join(suiteRoot, configRoot)
+}
 
 /*
 Init initializes a code repository for RegreSQL processing.
@@ -48,8 +61,7 @@ case and add a value for each parameter.\n `,
 
 // PlanQueries create query plans for queries found in the root repository
 func PlanQueries(root string) {
-	suite := Walk(root)
-	config, err := suite.readConfig()
+	config, err := newSuite(root).readConfig()
 
 	if err != nil {
 		fmt.Printf(err.Error())
@@ -60,6 +72,8 @@ func PlanQueries(root string) {
 		fmt.Printf(err.Error())
 		os.Exit(2)
 	}
+
+	suite := WalkFrom(root, resolveRoot(root, config.Root))
 
 	if err := suite.initRegressHierarchy(); err != nil {
 		fmt.Printf(err.Error())
@@ -86,8 +100,7 @@ case and add a value for each parameter. `)
 Update updates the expected files from the queries and their parameters.
 */
 func Update(root string) {
-	suite := Walk(root)
-	config, err := suite.readConfig()
+	config, err := newSuite(root).readConfig()
 
 	if err != nil {
 		fmt.Printf(err.Error())
@@ -98,6 +111,8 @@ func Update(root string) {
 		fmt.Printf(err.Error())
 		os.Exit(2)
 	}
+
+	suite := WalkFrom(root, resolveRoot(root, config.Root))
 
 	if err := suite.createExpectedResults(config.PgUri); err != nil {
 		fmt.Printf(err.Error())
@@ -125,8 +140,7 @@ Test runs the queries and compare their results to the previously created
 expected files (see Update()), reporting a TAP output to standard output.
 */
 func Test(root string) {
-	suite := Walk(root)
-	config, err := suite.readConfig()
+	config, err := newSuite(root).readConfig()
 
 	if err != nil {
 		fmt.Printf(err.Error())
@@ -138,6 +152,8 @@ func Test(root string) {
 		os.Exit(2)
 	}
 
+	suite := WalkFrom(root, resolveRoot(root, config.Root))
+
 	if err := suite.testQueries(config.PgUri); err != nil {
 		fmt.Printf(err.Error())
 		os.Exit(13)
@@ -145,7 +161,16 @@ func Test(root string) {
 }
 
 // List walks a repository, builds a Suite instance and pretty prints it.
+// When regress.yaml is present and its root field is set, only the files
+// under that subtree are listed — matching what test and update process.
 func List(dir string) {
-	suite := Walk(dir)
+	suite := newSuite(dir)
+	config, err := suite.readConfig()
+	if err != nil {
+		// No config found: fall back to walking the full directory.
+		suite = Walk(dir)
+	} else {
+		suite = WalkFrom(dir, resolveRoot(dir, config.Root))
+	}
 	suite.Println()
 }
