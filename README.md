@@ -81,6 +81,50 @@ about
 [psql variables](https://www.postgresql.org/docs/current/static/app-psql.html#APP-PSQL-VARIABLES) and
 their usage syntax and quoting rules: `:foo`, `:'foo'` and `:"foo"`.
 
+## Default variable values with `\set`
+
+SQL files may contain `\set` metacommands to supply default values for query
+parameters, exactly as you would type them in an interactive `psql` session:
+
+```sql
+-- genre-topn.sql
+\set n 10
+SELECT name
+  FROM genre
+ ORDER BY name
+ LIMIT :n;
+```
+
+RegreSQL strips `\set` lines before sending the query to PostgreSQL and stores
+their values as defaults.  When a parameter is resolved at test time the lookup
+order is:
+
+1. The YAML plan binding for the current test case (explicit value wins).
+2. The `\set` default from the SQL file.
+3. Error — the parameter has no value.
+
+**No plan file needed** when every query variable has a `\set` default.
+RegreSQL synthesises a single test case automatically, so you can run
+`regresql update` and `regresql test` straight away without touching any YAML.
+
+**Running `regresql plan`** on a file that uses `\set` pre-fills the generated
+YAML with those default values, so the plan is immediately runnable.  You can
+then add extra test cases or override individual values by editing the YAML.
+
+### Token parsing
+
+Value tokens follow psql quoting rules and are concatenated without any
+separator:
+
+| Token form | Stored value |
+|---|---|
+| `'text'` | outer quotes stripped; psql escapes expanded (`''`→`'`, `\n`→newline, `\t`→tab, `\NNN`→octal byte, `\xHH`→hex byte, `\.`→literal char) |
+| `"text"` | kept verbatim including the surrounding double-quotes |
+| `word` | taken as-is |
+| *(nothing)* | empty string |
+
+Example: `\set x a 'b' c` stores `abc` in `x`.
+
 ## Test Suites
 
 By default a Test Suite is a source directory.

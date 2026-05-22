@@ -47,7 +47,13 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 		names[0] = "1"
 		bindings[0] = make(map[string]string)
 		for _, varname := range q.Vars {
-			bindings[0][varname] = ""
+			// Pre-fill from \set defaults when available so the
+			// generated YAML is immediately runnable.
+			if def, ok := q.Defaults[varname]; ok {
+				bindings[0][varname] = def
+			} else {
+				bindings[0][varname] = ""
+			}
 		}
 	} else {
 		names = []string{}
@@ -72,6 +78,22 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 			return &Plan{q, pfile,
 				[]string{},
 				[]map[string]string{},
+				[]ResultSet{}}, nil
+		}
+		// All variables covered by \set defaults?  Synthesise a single
+		// test case with an empty binding map so Execute can fall back
+		// to q.Defaults at runtime.
+		allCovered := true
+		for _, varname := range q.Vars {
+			if _, ok := q.Defaults[varname]; !ok {
+				allCovered = false
+				break
+			}
+		}
+		if allCovered {
+			return &Plan{q, pfile,
+				[]string{"1"},
+				[]map[string]string{{}},
 				[]ResultSet{}}, nil
 		}
 		e := fmt.Errorf("Failed to get plan '%s': %s\n", pfile, err)
@@ -149,7 +171,10 @@ func (p *Plan) Execute(db *sql.DB) error {
 	result := make([]ResultSet, len(p.Bindings))
 
 	for i, bindings := range p.Bindings {
-		sql, args := p.Query.Prepare(bindings)
+		sql, args, err := p.Query.Prepare(bindings)
+		if err != nil {
+			return fmt.Errorf("Error preparing query '%s': %s", p.Query.Path, err)
+		}
 		res, err := QueryDB(db, sql, args...)
 
 		if err != nil {
