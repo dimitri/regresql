@@ -1,7 +1,6 @@
 package regresql
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
 	"io/ioutil"
@@ -12,6 +11,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/theherk/viper" // fork with write support
+	"gopkg.in/yaml.v2"
 )
 
 /*
@@ -46,13 +46,24 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 
 		names[0] = "1"
 		bindings[0] = make(map[string]string)
-		for _, varname := range q.Vars {
-			// Pre-fill from \set defaults when available so the
-			// generated YAML is immediately runnable.
-			if def, ok := q.Defaults[varname]; ok {
-				bindings[0][varname] = def
-			} else {
-				bindings[0][varname] = ""
+
+		if q.Positional {
+			// For positional queries, pre-fill from \bind defaults.
+			for idx, varname := range q.Vars {
+				if idx < len(q.BindDefaults) {
+					bindings[0][varname] = q.BindDefaults[idx]
+				} else {
+					bindings[0][varname] = ""
+				}
+			}
+		} else {
+			// For named queries, pre-fill from \set defaults.
+			for _, varname := range q.Vars {
+				if def, ok := q.Defaults[varname]; ok {
+					bindings[0][varname] = def
+				} else {
+					bindings[0][varname] = ""
+				}
 			}
 		}
 	} else {
@@ -74,75 +85,83 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 
 	if _, err := os.Stat(pfile); os.IsNotExist(err) {
 		if len(q.Params) == 0 {
-			// no Params, no Plan file, it's good
+			// No params and no plan file — perfectly valid.
 			return &Plan{q, pfile,
 				[]string{},
 				[]map[string]string{},
 				[]ResultSet{}}, nil
 		}
-		// All variables covered by \set defaults?  Synthesise a single
-		// test case with an empty binding map so Execute can fall back
-		// to q.Defaults at runtime.
-		allCovered := true
-		for _, varname := range q.Vars {
-			if _, ok := q.Defaults[varname]; !ok {
-				allCovered = false
-				break
+		// Can we synthesise a plan from inline defaults?
+		if q.Positional {
+			// Positional mode: every $N must have a \bind default.
+			if len(q.BindDefaults) >= len(q.Vars) {
+				return &Plan{q, pfile,
+					[]string{"1"},
+					[]map[string]string{{}},
+					[]ResultSet{}}, nil
 			}
-		}
-		if allCovered {
-			return &Plan{q, pfile,
-				[]string{"1"},
-				[]map[string]string{{}},
-				[]ResultSet{}}, nil
+		} else {
+			// Named mode: every :varname must have a \set default.
+			allCovered := true
+			for _, varname := range q.Vars {
+				if _, ok := q.Defaults[varname]; !ok {
+					allCovered = false
+					break
+				}
+			}
+			if allCovered {
+				return &Plan{q, pfile,
+					[]string{"1"},
+					[]map[string]string{{}},
+					[]ResultSet{}}, nil
+			}
 		}
 		e := fmt.Errorf("Failed to get plan '%s': %s\n", pfile, err)
 		return plan, e
 	}
 
-	v := viper.New()
-	v.SetConfigType("yaml")
-
 	data, err := ioutil.ReadFile(pfile)
-
 	if err != nil {
-		e := fmt.Errorf("Failed to read file '%s': %s\n", pfile, err)
-		return plan, e
+		return plan, fmt.Errorf("Failed to read file '%s': %s\n", pfile, err)
 	}
 
-	v.ReadConfig(bytes.NewBuffer(data))
-
-	// turns out Viper doesn't offer an easy way to build our Plan
-	// Bindings from the YAML file we produced, so do it the rather
-	// manual way.
+	// Parse the plan YAML into a generic map so we can handle both the
+	// named-binding format and the positional-array format:
 	//
-	// The viper.GetString() API returns a flat list of keys which
-	// encode the nesting levels of the keys thanks to a dot notation.
-	// We reverse engineer that into a map, simplifying the operation
-	// thanks to knowing we are dealing with a single level of nesting
-	// here: that's dot[0] for a Bindings entry then dot[1] for the key
-	// names within that Plan Bindings entry.
+	//   Named (map):
+	//     "test1":
+	//       name: "value"
+	//
+	//   Positional (array):
+	//     "test1":
+	//       - "val1"
+	//       - "val2"
+	var rawPlan map[string]interface{}
+	if err := yaml.Unmarshal(data, &rawPlan); err != nil {
+		return plan, fmt.Errorf("Failed to parse plan '%s': %s\n", pfile, err)
+	}
+
 	var bindings []map[string]string
 	var names []string
-	var current_map map[string]string
-	var current_name string
 
-	for _, key := range v.AllKeys() {
-		dots := strings.Split(key, ".") // we expect a single level
-		value := v.GetString(key)
+	for tcName, tcVal := range rawPlan {
+		names = append(names, tcName)
+		bm := make(map[string]string)
 
-		if current_name == "" || current_name != dots[0] {
-			if current_name != "" {
-				bindings = append(bindings, current_map)
+		switch v := tcVal.(type) {
+		case map[interface{}]interface{}:
+			// Named-binding format
+			for k, val := range v {
+				bm[fmt.Sprintf("%v", k)] = fmt.Sprintf("%v", val)
 			}
-			current_name = dots[0]
-			names = append(names, current_name)
-			current_map = make(map[string]string)
+		case []interface{}:
+			// Positional-array format: index 0 -> p1, index 1 -> p2, …
+			for idx, val := range v {
+				bm[fmt.Sprintf("p%d", idx+1)] = fmt.Sprintf("%v", val)
+			}
 		}
-		current_map[dots[1]] = value
+		bindings = append(bindings, bm)
 	}
-	// don't forget to finish the current map when out of the loop
-	bindings = append(bindings, current_map)
 
 	return &Plan{q, pfile, names, bindings, []ResultSet{}}, nil
 }
@@ -213,7 +232,19 @@ func (p *Plan) WriteResultSets(dir string, pgMajor int) error {
 	return nil
 }
 
-// Write a plan to disk in YAML format, thanks to Viper.
+// Write a plan to disk in YAML format.
+//
+// For named-mode queries the existing Viper-based writer is used, producing:
+//
+//	"1":
+//	  varname: value
+//
+// For positional-mode queries the plan is written as a YAML array directly
+// via gopkg.in/yaml.v2, producing:
+//
+//	"1":
+//	  - value1
+//	  - value2
 func (p *Plan) Write() {
 	if len(p.Bindings) == 0 {
 		fmt.Printf("Skipping Plan '%s': query uses no variable\n", p.Path)
@@ -221,6 +252,41 @@ func (p *Plan) Write() {
 	}
 
 	fmt.Printf("Creating Empty Plan '%s'\n", p.Path)
+
+	if p.Query.Positional {
+		// Build an ordered map of test-case-name -> []string for yaml.v2.
+		// yaml.v2 marshals map[string][]string with keys in insertion order
+		// only when using yaml.MapSlice; use a slice of structs instead.
+		type yamlEntry struct {
+			Name   string
+			Values []string
+		}
+		entries := make([]yamlEntry, len(p.Names))
+		for i, name := range p.Names {
+			vals := make([]string, len(p.Query.Vars))
+			for j, varname := range p.Query.Vars {
+				vals[j] = p.Bindings[i][varname]
+			}
+			entries[i] = yamlEntry{name, vals}
+		}
+
+		// Marshal as a YAML mapping with array values.
+		out := yaml.MapSlice{}
+		for _, e := range entries {
+			out = append(out, yaml.MapItem{Key: e.Name, Value: e.Values})
+		}
+		data, err := yaml.Marshal(out)
+		if err != nil {
+			fmt.Printf("Error marshalling positional plan '%s': %s\n", p.Path, err)
+			return
+		}
+		if err := ioutil.WriteFile(p.Path, data, 0644); err != nil {
+			fmt.Printf("Error writing positional plan '%s': %s\n", p.Path, err)
+		}
+		return
+	}
+
+	// Named mode: use viper (fork with write support).
 	v := viper.New()
 	v.SetConfigType("yaml")
 

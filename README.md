@@ -81,6 +81,78 @@ about
 [psql variables](https://www.postgresql.org/docs/current/static/app-psql.html#APP-PSQL-VARIABLES) and
 their usage syntax and quoting rules: `:foo`, `:'foo'` and `:"foo"`.
 
+## Positional `$N` parameters
+
+SQL files may use PostgreSQL's native parameterized placeholder syntax
+(`$1`, `$2`, …) directly instead of the `:varname` style.  RegreSQL detects
+these at parse time and maps each position to a named slot `p1`, `p2`, …,
+which is then used in the YAML plan and at execution time.
+
+```sql
+-- genre-topn-positional.sql
+\bind 3
+SELECT name
+  FROM genre
+ ORDER BY name
+ LIMIT $1;
+```
+
+### `\bind` defaults
+
+`\bind val1 val2 …` (placed in the SQL file, just like `\set`) supplies
+default values for `$1`, `$2`, … respectively.  The same psql quoting rules
+apply: single-quoted values have their outer quotes stripped and C escape
+sequences expanded; double-quoted values are kept verbatim including the
+surrounding quotes; unquoted words are taken as-is.  Multiple tokens on one
+line are treated as separate positional values (not concatenated).
+
+Unlike `\set`, **`\bind` values are not subject to psql variable
+interpolation** — they are always literal.
+
+### YAML plan format for positional queries
+
+Test cases can be written as YAML arrays instead of named maps:
+
+```yaml
+"1":
+  - "3"    # $1
+  - "foo"  # $2
+```
+
+The named-map format using `pN` keys is also accepted:
+
+```yaml
+"1":
+  p1: "3"
+  p2: "foo"
+```
+
+Both forms are equivalent and may be mixed across test cases in the same file.
+
+### No plan file needed
+
+When every `$N` in the query has a `\bind` default, RegreSQL synthesises a
+single test case automatically — no YAML file is required.
+
+### Mixed styles are an error
+
+Using both `:varname` and `$N` in the same SQL file is not allowed.
+RegreSQL reports an error that names the conflicting parameters:
+
+```
+mixed parameter styles in "src/sql/query.sql":
+  named variables: :artist, :limit
+  positional parameters: $1, $2
+Use either :varname or $N, not both.
+```
+
+### Context detection
+
+`$N` references inside SQL string literals (`'...'`), line comments (`-- …`),
+block comments (`/* … */`, including nested), and dollar-quoted strings
+(`$$…$$`, `$tag$…$tag$`) are correctly ignored — only `$N` tokens that are
+actual query parameters are recognised.
+
 ## Default variable values with `\set`
 
 SQL files may contain `\set` metacommands to supply default values for query

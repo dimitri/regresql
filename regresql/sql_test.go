@@ -5,9 +5,23 @@ import (
 	"testing"
 )
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+// mustParseQueryString calls parseQueryString and fails the test on error.
+func mustParseQueryString(t *testing.T, path, sql string) *Query {
+	t.Helper()
+	q, err := parseQueryString(path, sql)
+	if err != nil {
+		t.Fatalf("parseQueryString error: %v", err)
+	}
+	return q
+}
+
+// ── Existing named-mode tests (updated for new error return) ─────────────────
+
 func TestParseQueryString(t *testing.T) {
 	queryString := `select * from foo where id = :user_id`
-	q := parseQueryString("no/path", queryString)
+	q := mustParseQueryString(t, "no/path", queryString)
 
 	if len(q.Vars) != 1 || q.Vars[0] != "user_id" {
 		t.Error("Expected [\"user_id\"], got ", q.Vars)
@@ -16,7 +30,7 @@ func TestParseQueryString(t *testing.T) {
 
 func TestParseQueryStringWithTypeCast(t *testing.T) {
 	queryString := `select name::text from foo where id = :user_id`
-	q := parseQueryString("no/path", queryString)
+	q := mustParseQueryString(t, "no/path", queryString)
 
 	if len(q.Vars) != 1 || q.Vars[0] != "user_id" {
 		t.Error("Expected only [\"user_id\"], got ", q.Vars)
@@ -25,9 +39,8 @@ func TestParseQueryStringWithTypeCast(t *testing.T) {
 
 func TestPrepareOneParam(t *testing.T) {
 	queryString := `select * from foo where id = :id`
-	q := parseQueryString("no/path", queryString)
-	b := make(map[string]string)
-	b["id"] = "1"
+	q := mustParseQueryString(t, "no/path", queryString)
+	b := map[string]string{"id": "1"}
 
 	sql, params, err := q.Prepare(b)
 
@@ -37,19 +50,15 @@ func TestPrepareOneParam(t *testing.T) {
 	if sql != "select * from foo where id = $1" {
 		t.Error("Query string not as expected ", sql)
 	}
-
-	if !(len(params) == 1 &&
-		params[0] == "1") {
+	if !(len(params) == 1 && params[0] == "1") {
 		t.Error("Bindings not properly applied, got ", params)
 	}
 }
 
 func TestPrepareTwoParams(t *testing.T) {
 	queryString := `select * from foo where a = :a and b between :a and :b`
-	q := parseQueryString("no/path", queryString)
-	b := make(map[string]string)
-	b["a"] = "a"
-	b["b"] = "b"
+	q := mustParseQueryString(t, "no/path", queryString)
+	b := map[string]string{"a": "a", "b": "b"}
 
 	sql, params, err := q.Prepare(b)
 
@@ -59,94 +68,62 @@ func TestPrepareTwoParams(t *testing.T) {
 	if sql != "select * from foo where a = $1 and b between $1 and $2" {
 		t.Error("Query string not as expected ", sql)
 	}
-
-	if !(len(params) == 3 &&
-		params[0] == "a" &&
-		params[1] == "a" &&
-		params[2] == "b") {
+	if !(len(params) == 3 && params[0] == "a" && params[1] == "a" && params[2] == "b") {
 		t.Error("Bindings not properly applied, got ", params)
 	}
 }
 
-// ── \set parsing tests ──────────────────────────────────────────────────────
+// ── \set tests (unchanged semantics) ─────────────────────────────────────────
 
-// TestSetUnquoted checks that a bare \set line is parsed and removed from q.Query.
 func TestSetUnquoted(t *testing.T) {
-	queryString := "\\set n 10\nSELECT :n::int;\n"
-	q := parseQueryString("no/path", queryString)
+	q := mustParseQueryString(t, "no/path", "\\set n 10\nSELECT :n::int;\n")
 
 	if v, ok := q.Defaults["n"]; !ok || v != "10" {
 		t.Errorf("Expected Defaults[\"n\"]==\"10\", got %q (ok=%v)", v, ok)
 	}
-	// \set line must be absent from the normalized query sent to PostgreSQL
 	if strings.Contains(q.Query, `\set`) {
-		t.Error("\\set line should be stripped from q.Query, but is still present")
+		t.Error("\\set line should be stripped from q.Query")
 	}
 }
 
-// TestSetSingleQuotedEscapes checks that single-quoted \set values have their
-// outer quotes stripped and psql escape sequences expanded.
 func TestSetSingleQuotedEscapes(t *testing.T) {
-	queryString := `\set s 'hello\nworld'` + "\nSELECT 1;\n"
-	q := parseQueryString("no/path", queryString)
-
+	q := mustParseQueryString(t, "no/path", `\set s 'hello\nworld'`+"\nSELECT 1;\n")
 	want := "hello\nworld"
 	if v := q.Defaults["s"]; v != want {
 		t.Errorf("Expected Defaults[\"s\"]==%q, got %q", want, v)
 	}
 }
 
-// TestSetSingleQuotedDoubleApostrophe checks '' → ' inside single-quoted values.
 func TestSetSingleQuotedDoubleApostrophe(t *testing.T) {
-	queryString := `\set s 'it''s'` + "\nSELECT 1;\n"
-	q := parseQueryString("no/path", queryString)
-
-	want := "it's"
-	if v := q.Defaults["s"]; v != want {
-		t.Errorf("Expected Defaults[\"s\"]==%q, got %q", want, v)
+	q := mustParseQueryString(t, "no/path", `\set s 'it''s'`+"\nSELECT 1;\n")
+	if v := q.Defaults["s"]; v != "it's" {
+		t.Errorf("Expected \"it's\", got %q", v)
 	}
 }
 
-// TestSetDoubleQuoted checks that double-quoted tokens are kept verbatim
-// including their surrounding double-quotes.
 func TestSetDoubleQuoted(t *testing.T) {
-	queryString := `\set s "hello"` + "\nSELECT 1;\n"
-	q := parseQueryString("no/path", queryString)
-
-	want := `"hello"`
-	if v := q.Defaults["s"]; v != want {
-		t.Errorf("Expected Defaults[\"s\"]==%q, got %q", want, v)
+	q := mustParseQueryString(t, "no/path", `\set s "hello"`+"\nSELECT 1;\n")
+	if v := q.Defaults["s"]; v != `"hello"` {
+		t.Errorf("Expected `\"hello\"`, got %q", v)
 	}
 }
 
-// TestSetMultiTokenConcatenation checks that multiple tokens are joined without
-// any separator (psql concatenation semantics).
 func TestSetMultiTokenConcatenation(t *testing.T) {
-	queryString := `\set x a 'b' c` + "\nSELECT 1;\n"
-	q := parseQueryString("no/path", queryString)
-
-	want := "abc"
-	if v := q.Defaults["x"]; v != want {
-		t.Errorf("Expected Defaults[\"x\"]==%q, got %q", want, v)
+	q := mustParseQueryString(t, "no/path", `\set x a 'b' c`+"\nSELECT 1;\n")
+	if v := q.Defaults["x"]; v != "abc" {
+		t.Errorf("Expected \"abc\", got %q", v)
 	}
 }
 
-// TestSetNoValue checks that \set NAME with no value stores an empty string.
 func TestSetNoValue(t *testing.T) {
-	queryString := "\\set EMPTY\nSELECT 1;\n"
-	q := parseQueryString("no/path", queryString)
-
+	q := mustParseQueryString(t, "no/path", "\\set EMPTY\nSELECT 1;\n")
 	if v, ok := q.Defaults["EMPTY"]; !ok || v != "" {
 		t.Errorf("Expected Defaults[\"EMPTY\"]==\"\", got %q (ok=%v)", v, ok)
 	}
 }
 
-// TestSetUnusedVariable checks that a \set variable not referenced by any :var
-// is still stored in q.Defaults and is NOT added to q.Vars.
 func TestSetUnusedVariable(t *testing.T) {
-	queryString := "\\set unused foo\nSELECT 1;\n"
-	q := parseQueryString("no/path", queryString)
-
+	q := mustParseQueryString(t, "no/path", "\\set unused foo\nSELECT 1;\n")
 	if v, ok := q.Defaults["unused"]; !ok || v != "foo" {
 		t.Errorf("Expected Defaults[\"unused\"]==\"foo\", got %q (ok=%v)", v, ok)
 	}
@@ -157,12 +134,8 @@ func TestSetUnusedVariable(t *testing.T) {
 	}
 }
 
-// TestPrepareDefaultFallback checks that Prepare uses q.Defaults when the
-// variable is absent from the binding map.
 func TestPrepareDefaultFallback(t *testing.T) {
-	queryString := "\\set n 10\nSELECT :n::int;\n"
-	q := parseQueryString("no/path", queryString)
-
+	q := mustParseQueryString(t, "no/path", "\\set n 10\nSELECT :n::int;\n")
 	_, params, err := q.Prepare(map[string]string{})
 	if err != nil {
 		t.Fatal("Unexpected error:", err)
@@ -172,24 +145,16 @@ func TestPrepareDefaultFallback(t *testing.T) {
 	}
 }
 
-// TestPrepareMissingVar checks that Prepare returns an error when a variable
-// is absent from both the binding map and q.Defaults.
 func TestPrepareMissingVar(t *testing.T) {
-	queryString := `SELECT :n::int;`
-	q := parseQueryString("no/path", queryString)
-
+	q := mustParseQueryString(t, "no/path", `SELECT :n::int;`)
 	_, _, err := q.Prepare(map[string]string{})
 	if err == nil {
-		t.Error("Expected an error for missing variable, got nil")
+		t.Error("Expected error for missing variable, got nil")
 	}
 }
 
-// TestPrepareBindingOverridesDefault checks that an explicit binding map entry
-// takes precedence over a \set default.
 func TestPrepareBindingOverridesDefault(t *testing.T) {
-	queryString := "\\set n 10\nSELECT :n::int;\n"
-	q := parseQueryString("no/path", queryString)
-
+	q := mustParseQueryString(t, "no/path", "\\set n 10\nSELECT :n::int;\n")
 	_, params, err := q.Prepare(map[string]string{"n": "99"})
 	if err != nil {
 		t.Fatal("Unexpected error:", err)
@@ -199,3 +164,172 @@ func TestPrepareBindingOverridesDefault(t *testing.T) {
 	}
 }
 
+// ── Positional $N scanning tests ─────────────────────────────────────────────
+
+func TestPositionalParams(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "SELECT $1, $2 FROM foo;\n")
+
+	if !q.Positional {
+		t.Fatal("Expected Positional=true")
+	}
+	if len(q.Vars) != 2 || q.Vars[0] != "p1" || q.Vars[1] != "p2" {
+		t.Errorf("Expected Vars==[\"p1\",\"p2\"], got %v", q.Vars)
+	}
+	// Query must be unchanged (no $N substitution)
+	if !strings.Contains(q.Query, "$1") || !strings.Contains(q.Query, "$2") {
+		t.Errorf("Expected $1/$2 to remain in q.Query, got %q", q.Query)
+	}
+}
+
+func TestPositionalParamsDollarQuoteEmpty(t *testing.T) {
+	// $1 inside $$ .. $$ must be ignored; $2 outside must be detected.
+	q := mustParseQueryString(t, "no/path", "SELECT $2, $$contains $1 here$$ FROM foo;\n")
+	if len(q.Vars) != 2 || q.Vars[0] != "p1" || q.Vars[1] != "p2" {
+		t.Errorf("Expected Vars==[\"p1\",\"p2\"] (maxN=2), got %v", q.Vars)
+	}
+}
+
+func TestPositionalParamsTaggedDollarQuote(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "SELECT $2, $body$has $1$body$ FROM foo;\n")
+	if len(q.Vars) != 2 || q.Vars[0] != "p1" || q.Vars[1] != "p2" {
+		t.Errorf("Expected Vars==[\"p1\",\"p2\"], got %v", q.Vars)
+	}
+}
+
+func TestPositionalParamsStringLiteral(t *testing.T) {
+	// $99 is inside a string literal and must not inflate maxN.
+	// Only $2 is a real parameter, so maxN=2 and Vars=["p1","p2"].
+	q := mustParseQueryString(t, "no/path", "SELECT '$99', $2 FROM foo;\n")
+	if len(q.Vars) != 2 || q.Vars[0] != "p1" || q.Vars[1] != "p2" {
+		t.Errorf("Expected Vars==[\"p1\",\"p2\"] (string-literal $99 ignored), got %v", q.Vars)
+	}
+}
+
+func TestPositionalParamsLineComment(t *testing.T) {
+	// $99 is in a line comment and must not inflate maxN.
+	q := mustParseQueryString(t, "no/path", "-- skip $99\nSELECT $2 FROM foo;\n")
+	if len(q.Vars) != 2 || q.Vars[0] != "p1" || q.Vars[1] != "p2" {
+		t.Errorf("Expected Vars==[\"p1\",\"p2\"] (comment $99 ignored), got %v", q.Vars)
+	}
+}
+
+func TestPositionalParamsBlockComment(t *testing.T) {
+	// $99 is in a block comment and must not inflate maxN.
+	q := mustParseQueryString(t, "no/path", "SELECT /* skip $99 */ $2 FROM foo;\n")
+	if len(q.Vars) != 2 || q.Vars[0] != "p1" || q.Vars[1] != "p2" {
+		t.Errorf("Expected Vars==[\"p1\",\"p2\"] (comment $99 ignored), got %v", q.Vars)
+	}
+}
+
+func TestPositionalParamsNestedBlockComment(t *testing.T) {
+	// $99 / $98 inside nested block comments must not inflate maxN.
+	// PostgreSQL supports nested block comments.
+	q := mustParseQueryString(t, "no/path", "SELECT /* /* $99 */ $98 */ $3 FROM foo;\n")
+	if len(q.Vars) != 3 || q.Vars[0] != "p1" || q.Vars[1] != "p2" || q.Vars[2] != "p3" {
+		t.Errorf("Expected Vars==[\"p1\",\"p2\",\"p3\"] (nested-comment $99/$98 ignored), got %v", q.Vars)
+	}
+}
+
+func TestPositionalParamsNonContiguous(t *testing.T) {
+	// $2 is absent but maxN=3, so Vars should be ["p1","p2","p3"].
+	q := mustParseQueryString(t, "no/path", "SELECT $3, $1 FROM foo;\n")
+	if len(q.Vars) != 3 || q.Vars[0] != "p1" || q.Vars[1] != "p2" || q.Vars[2] != "p3" {
+		t.Errorf("Expected Vars==[\"p1\",\"p2\",\"p3\"], got %v", q.Vars)
+	}
+}
+
+// ── Mixed-mode error test ─────────────────────────────────────────────────────
+
+func TestMixedParamStyleError(t *testing.T) {
+	_, err := parseQueryString("src/sql/query.sql", "SELECT :name FROM foo WHERE id = $1;\n")
+	if err == nil {
+		t.Fatal("Expected mixed-mode error, got nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, ":name") {
+		t.Errorf("Error should mention :name, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "$1") {
+		t.Errorf("Error should mention $1, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "mixed parameter styles") {
+		t.Errorf("Error should say 'mixed parameter styles', got: %s", errMsg)
+	}
+}
+
+// ── \bind extraction tests ────────────────────────────────────────────────────
+
+func TestBindExtract(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "\\bind 'hello world' foo\nSELECT $1, $2;\n")
+
+	if len(q.BindDefaults) != 2 {
+		t.Fatalf("Expected 2 BindDefaults, got %d: %v", len(q.BindDefaults), q.BindDefaults)
+	}
+	if q.BindDefaults[0] != "hello world" {
+		t.Errorf("Expected BindDefaults[0]==\"hello world\", got %q", q.BindDefaults[0])
+	}
+	if q.BindDefaults[1] != "foo" {
+		t.Errorf("Expected BindDefaults[1]==\"foo\", got %q", q.BindDefaults[1])
+	}
+	if strings.Contains(q.Query, `\bind`) {
+		t.Error("\\bind line should be stripped from q.Query")
+	}
+}
+
+func TestBindLastWins(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "\\bind first\n\\bind second\nSELECT $1;\n")
+
+	if len(q.BindDefaults) != 1 || q.BindDefaults[0] != "second" {
+		t.Errorf("Expected BindDefaults==[\"second\"] (last wins), got %v", q.BindDefaults)
+	}
+}
+
+func TestBindNoValues(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "\\bind\nSELECT $1;\n")
+	if len(q.BindDefaults) != 0 {
+		t.Errorf("Expected empty BindDefaults, got %v", q.BindDefaults)
+	}
+}
+
+// ── Positional Prepare tests ──────────────────────────────────────────────────
+
+func TestPositionalPrepareFromBinding(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "SELECT $1::int + $2::int AS sum;\n")
+	_, params, err := q.Prepare(map[string]string{"p1": "3", "p2": "4"})
+	if err != nil {
+		t.Fatal("Unexpected error:", err)
+	}
+	if len(params) != 2 || params[0] != "3" || params[1] != "4" {
+		t.Errorf("Expected params==[\"3\",\"4\"], got %v", params)
+	}
+}
+
+func TestPositionalPrepareFromBindDefault(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "\\bind 3 4\nSELECT $1::int + $2::int AS sum;\n")
+	_, params, err := q.Prepare(map[string]string{})
+	if err != nil {
+		t.Fatal("Unexpected error:", err)
+	}
+	if len(params) != 2 || params[0] != "3" || params[1] != "4" {
+		t.Errorf("Expected params==[\"3\",\"4\"], got %v", params)
+	}
+}
+
+func TestPositionalPrepareMissing(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "SELECT $1::int;\n")
+	_, _, err := q.Prepare(map[string]string{})
+	if err == nil {
+		t.Error("Expected error for missing positional parameter, got nil")
+	}
+}
+
+func TestPositionalPrepareBindingOverridesDefault(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "\\bind 3\nSELECT $1::int;\n")
+	_, params, err := q.Prepare(map[string]string{"p1": "99"})
+	if err != nil {
+		t.Fatal("Unexpected error:", err)
+	}
+	if len(params) != 1 || params[0] != "99" {
+		t.Errorf("Expected params==[\"99\"] (binding wins over \\bind), got %v", params)
+	}
+}
