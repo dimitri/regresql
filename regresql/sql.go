@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-// Regular Expression to find query parameters in SQL query files, as per
-// the psql support for variables:
-// https://www.postgresql.org/docs/9.6/static/app-psql.html#APP-PSQL-VARIABLES
-const (
-	psqlVarRE = `[^:]:['"]?([A-Za-z][A-Za-z0-9_]*)['"]?`
-)
-
 // setLineRE matches a psql \set metacommand line, capturing the variable name
 // (group 1) and the rest-of-line value tokens (group 2).
 var setLineRE = regexp.MustCompile(`(?m)^[ \t]*\\set[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*([^\r\n]*)\r?\n?`)
@@ -446,6 +439,216 @@ func isSQLIdentCont(c byte) bool {
 	return isSQLIdentStart(c) || (c >= '0' && c <= '9')
 }
 
+// ── Named-param context-aware scan+replace ────────────────────────────────────
+
+// scanAndReplaceNamedParams performs a single context-aware pass over the SQL
+// text.  In normal SQL context (outside string literals, comments, and
+// dollar-quoted blocks) it detects :varname, :'varname', and :"varname" tokens,
+// records them, and emits the corresponding $N positional placeholder.  All
+// other SQL contexts are copied verbatim so their content is never examined or
+// altered.
+//
+// Returns:
+//
+//	normSQL -- SQL with each unique :varname replaced by $N
+//	vars    -- unique variable names in first-appearance order
+//	params  -- one entry per occurrence (may repeat), in text order
+//
+// The same five SQL states as scanPositionalParams are tracked:
+// stNormal, stSingleQuote, stLineComment, stBlockComment, stDollarQuote.
+// A prevChar variable guards against :: casts being misread as :varname.
+func scanAndReplaceNamedParams(text string) (normSQL string, vars []string, params []string) {
+	const (
+		stNormal = iota
+		stSingleQuote
+		stLineComment
+		stBlockComment
+		stDollarQuote
+	)
+
+	var out strings.Builder
+	ordinals := make(map[string]int) // name -> ordinal (1-based)
+	ordinal := 1
+	blockDepth := 0
+	dollarTag := ""
+	state := stNormal
+	var prevChar byte
+
+	n := len(text)
+	i := 0
+	for i < n {
+		switch state {
+		case stNormal:
+			switch {
+			case text[i] == '\'':
+				prevChar = '\''
+				out.WriteByte('\'')
+				state = stSingleQuote
+				i++
+
+			case i+1 < n && text[i] == '-' && text[i+1] == '-':
+				prevChar = '-'
+				out.WriteString("--")
+				state = stLineComment
+				i += 2
+
+			case i+1 < n && text[i] == '/' && text[i+1] == '*':
+				prevChar = '*'
+				out.WriteString("/*")
+				state = stBlockComment
+				blockDepth = 1
+				i += 2
+
+			case text[i] == '$':
+				// Dollar-quote detection; $N positional params pass through unchanged.
+				if i+1 < n {
+					next := text[i+1]
+					switch {
+					case next == '$':
+						out.WriteString("$$")
+						dollarTag = ""
+						state = stDollarQuote
+						prevChar = '$'
+						i += 2
+					case isSQLIdentStart(next):
+						tagStart := i + 1
+						j := i + 1
+						for j < n && isSQLIdentCont(text[j]) {
+							j++
+						}
+						if j < n && text[j] == '$' {
+							dollarTag = text[tagStart:j]
+							state = stDollarQuote
+							out.WriteString(text[i : j+1])
+							prevChar = '$'
+							i = j + 1
+						} else {
+							prevChar = text[i]
+							out.WriteByte(text[i])
+							i++
+						}
+					default:
+						prevChar = text[i]
+						out.WriteByte(text[i])
+						i++
+					}
+				} else {
+					prevChar = text[i]
+					out.WriteByte(text[i])
+					i++
+				}
+
+			case text[i] == ':':
+				if prevChar == ':' {
+					// Second colon of a :: cast -- not a variable, emit verbatim.
+					out.WriteByte(':')
+					prevChar = ':'
+					i++
+				} else {
+					// Attempt :varname / :'varname' / :"varname" match.
+					j := i + 1
+					var openQuote byte
+					if j < n && (text[j] == '\'' || text[j] == '"') {
+						openQuote = text[j]
+						j++
+					}
+					if j < n && isSQLIdentStart(text[j]) {
+						nameStart := j
+						j++
+						for j < n && isSQLIdentCont(text[j]) {
+							j++
+						}
+						varname := text[nameStart:j]
+						if openQuote != 0 && j < n && text[j] == openQuote {
+							j++ // consume closing quote
+						}
+						// Record occurrence.
+						params = append(params, varname)
+						if _, found := ordinals[varname]; !found {
+							ordinals[varname] = ordinal
+							vars = append(vars, varname)
+							ordinal++
+						}
+						fmt.Fprintf(&out, "$%d", ordinals[varname])
+						prevChar = 0 // non-colon sentinel
+						i = j
+					} else {
+						// Not a variable reference (bare :, ::, :123, etc.)
+						out.WriteByte(':')
+						prevChar = ':'
+						i++
+					}
+				}
+
+			default:
+				prevChar = text[i]
+				out.WriteByte(text[i])
+				i++
+			}
+
+		case stSingleQuote:
+			out.WriteByte(text[i])
+			if text[i] == '\'' {
+				if i+1 < n && text[i+1] == '\'' {
+					out.WriteByte(text[i+1])
+					prevChar = '\''
+					i += 2
+				} else {
+					state = stNormal
+					prevChar = '\''
+					i++
+				}
+			} else {
+				prevChar = text[i]
+				i++
+			}
+
+		case stLineComment:
+			out.WriteByte(text[i])
+			if text[i] == '\n' {
+				state = stNormal
+			}
+			prevChar = text[i]
+			i++
+
+		case stBlockComment:
+			switch {
+			case i+1 < n && text[i] == '/' && text[i+1] == '*':
+				out.WriteString("/*")
+				blockDepth++
+				prevChar = '*'
+				i += 2
+			case i+1 < n && text[i] == '*' && text[i+1] == '/':
+				out.WriteString("*/")
+				blockDepth--
+				prevChar = '/'
+				i += 2
+				if blockDepth == 0 {
+					state = stNormal
+				}
+			default:
+				prevChar = text[i]
+				out.WriteByte(text[i])
+				i++
+			}
+
+		case stDollarQuote:
+			closing := "$" + dollarTag + "$"
+			if i+len(closing) <= n && text[i:i+len(closing)] == closing {
+				out.WriteString(closing)
+				state = stNormal
+				prevChar = '$'
+				i += len(closing)
+			} else {
+				prevChar = text[i]
+				out.WriteByte(text[i])
+				i++
+			}
+		}
+	}
+	return out.String(), vars, params
+}
+
 // ── Query parsing ─────────────────────────────────────────────────────────────
 
 // parseQueryFile reads a SQL file and returns a Query instance.
@@ -481,20 +684,11 @@ func parseQueryString(queryPath string, queryString string) (*Query, error) {
 
 	// ── Detect parameter style ───────────────────────────────────────────────
 
-	// Named params scan
-	r, _ := regexp.Compile(psqlVarRE)
-	namedUses := r.FindAllStringSubmatch(cleanedSQL, -1)
-	seenNames := make(map[string]bool)
-	var namedVars []string
-	for _, match := range namedUses {
-		vname := match[1]
-		if !seenNames[vname] {
-			seenNames[vname] = true
-			namedVars = append(namedVars, vname)
-		}
-	}
+	// Named scan+replace: context-aware single pass (skips string literals,
+	// comments, dollar-quoted blocks; guards :: casts via prevChar tracking).
+	normSQL, namedVars, namedParams := scanAndReplaceNamedParams(cleanedSQL)
 
-	// Positional params scan
+	// Positional params scan (unchanged).
 	maxN := scanPositionalParams(cleanedSQL)
 
 	// Mixed-mode error
@@ -534,36 +728,15 @@ func parseQueryString(queryPath string, queryString string) (*Query, error) {
 		}, nil
 	}
 
-	// ── Named mode (existing logic) ──────────────────────────────────────────
-	params := make([]string, 0)
-	vars := make([]string, 0)
-
-	mapv := make(map[string]int)
-	ordinal := 1
-
-	for _, match := range namedUses {
-		vname := match[1]
-		params = append(params, vname)
-		if _, found := mapv[vname]; !found {
-			mapv[vname] = ordinal
-			ordinal++
-		}
-	}
-
-	// Build normalised SQL with $N placeholders.
-	sql := cleanedSQL
-	for name, ord := range mapv {
-		vars = append(vars, name)
-		re, _ := regexp.Compile(fmt.Sprintf(`:["']?%s["']?`, name))
-		sql = re.ReplaceAllLiteralString(sql, fmt.Sprintf("$%d", ord))
-	}
-
+	// ── Named mode ──────────────────────────────────────────────────────────
+	// normSQL already has :varname replaced by $N; namedVars and namedParams
+	// are in first-appearance / occurrence order from scanAndReplaceNamedParams.
 	return &Query{
 		Path:     queryPath,
 		Text:     queryString,
-		Query:    sql,
-		Vars:     vars,
-		Params:   params,
+		Query:    normSQL,
+		Vars:     namedVars,
+		Params:   namedParams,
 		Defaults: setDefaults,
 	}, nil
 }

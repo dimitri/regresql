@@ -333,3 +333,77 @@ func TestPositionalPrepareBindingOverridesDefault(t *testing.T) {
 		t.Errorf("Expected params==[\"99\"] (binding wins over \\bind), got %v", params)
 	}
 }
+
+// ── Named-param context-awareness tests ──────────────────────────────────────
+
+func TestNamedParamSkipsSingleQuote(t *testing.T) {
+	// :val inside a string literal must not be treated as a named parameter.
+	q := mustParseQueryString(t, "no/path", "SELECT ':val' AS x WHERE id = :id;\n")
+	if len(q.Vars) != 1 || q.Vars[0] != "id" {
+		t.Errorf("Expected Vars==[\"id\"], got %v", q.Vars)
+	}
+}
+
+func TestNamedParamSkipsLineComment(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "-- :skip\nSELECT :id FROM t;\n")
+	if len(q.Vars) != 1 || q.Vars[0] != "id" {
+		t.Errorf("Expected Vars==[\"id\"] (comment :skip ignored), got %v", q.Vars)
+	}
+}
+
+func TestNamedParamSkipsBlockComment(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "SELECT /* :skip */ :id FROM t;\n")
+	if len(q.Vars) != 1 || q.Vars[0] != "id" {
+		t.Errorf("Expected Vars==[\"id\"] (block-comment :skip ignored), got %v", q.Vars)
+	}
+}
+
+func TestNamedParamSkipsDollarQuote(t *testing.T) {
+	q := mustParseQueryString(t, "no/path", "SELECT $$:skip$$ AS x, :id AS y;\n")
+	if len(q.Vars) != 1 || q.Vars[0] != "id" {
+		t.Errorf("Expected Vars==[\"id\"] (dollar-quoted :skip ignored), got %v", q.Vars)
+	}
+}
+
+func TestNamedParamSkipsJsonStringLiteral(t *testing.T) {
+	// Regression: :varname inside a JSON string literal was falsely detected.
+	sql := "SELECT * FROM t WHERE data @> '{\"type\":\"admin\"}' AND id = :id;\n"
+	q := mustParseQueryString(t, "no/path", sql)
+	if len(q.Vars) != 1 || q.Vars[0] != "id" {
+		t.Errorf("Expected Vars==[\"id\"], got %v", q.Vars)
+	}
+	// The JSON literal must survive unchanged in the normalised query.
+	if !strings.Contains(q.Query, `'{"type":"admin"}'`) {
+		t.Errorf("JSON string literal should be unchanged in q.Query, got: %s", q.Query)
+	}
+}
+
+func TestNamedParamTypeCastNotMatched(t *testing.T) {
+	// :n::int -- :n is the variable; ::int is a cast and must NOT produce "int".
+	q := mustParseQueryString(t, "no/path", "SELECT :n::int;\n")
+	if len(q.Vars) != 1 || q.Vars[0] != "n" {
+		t.Errorf("Expected Vars==[\"n\"], got %v", q.Vars)
+	}
+}
+
+func TestNamedParamAfterStringLiteral(t *testing.T) {
+	// :id that follows a closing quote must still be detected.
+	q := mustParseQueryString(t, "no/path", "SELECT 'literal' AS x WHERE id = :id;\n")
+	if len(q.Vars) != 1 || q.Vars[0] != "id" {
+		t.Errorf("Expected Vars==[\"id\"] after string literal, got %v", q.Vars)
+	}
+}
+
+func TestNamedParamStringLiteralPreserved(t *testing.T) {
+	// Verify that the substitution step does NOT alter string-literal content.
+	// Even if the variable name appears inside a string, the literal must reach
+	// PostgreSQL unchanged (the bug was that the regex replace also ran inside
+	// string literals).
+	q := mustParseQueryString(t, "no/path", "SELECT ':user_id text' AS lbl WHERE id = :user_id;\n")
+	if !strings.Contains(q.Query, "':user_id text'") {
+		t.Errorf("String literal ':user_id text' should be unchanged in q.Query, got: %s", q.Query)
+	}
+	if !strings.Contains(q.Query, "$1") {
+		t.Errorf("Real :user_id should be replaced by $1 in q.Query, got: %s", q.Query)
+	}
+}
