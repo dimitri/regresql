@@ -93,18 +93,26 @@ func (s *Suite) appendPath(path string) *Suite {
 // Walk walks the root directory recursively in search of *.sql files and
 // returns a Suite instance representing the traversal.
 func Walk(root string) *Suite {
-	return WalkFrom(root, root)
+	return WalkFrom(root, root, nil)
 }
 
 // WalkFrom is like Walk but scans scanRoot for *.sql files while keeping the
 // Suite's regresql/ directory (plans, expected, out) anchored under root.
 // This lets regress.yaml's "root" field restrict which SQL files are tested
 // without moving the regresql/ hierarchy.
-func WalkFrom(root, scanRoot string) *Suite {
+//
+// exclude is a list of glob patterns (relative to root) for SQL files to skip.
+func WalkFrom(root, scanRoot string, exclude []string) *Suite {
 	suite := newSuite(root)
 
 	visit := func(path string, f os.FileInfo, err error) error {
 		if filepath.Ext(path) == ".sql" {
+			relPath, _ := filepath.Rel(root, path)
+			for _, pattern := range exclude {
+				if matched, _ := filepath.Match(pattern, relPath); matched {
+					return nil
+				}
+			}
 			suite = suite.appendPath(path)
 		}
 		return nil

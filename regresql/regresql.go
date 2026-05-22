@@ -73,7 +73,7 @@ func PlanQueries(root string) {
 		os.Exit(2)
 	}
 
-	suite := WalkFrom(root, resolveRoot(root, config.Root))
+	suite := WalkFrom(root, resolveRoot(root, config.Root), config.Exclude)
 
 	if err := suite.initRegressHierarchy(); err != nil {
 		fmt.Printf(err.Error())
@@ -86,7 +86,7 @@ func PlanQueries(root string) {
 
 	fmt.Println("")
 	fmt.Println(`Empty test plans have been created.
-Edit the plans to add query binding values, then run 
+Edit the plans to add query binding values, then run
 
   regresql update
 
@@ -112,7 +112,7 @@ func Update(root string) {
 		os.Exit(2)
 	}
 
-	suite := WalkFrom(root, resolveRoot(root, config.Root))
+	suite := WalkFrom(root, resolveRoot(root, config.Root), config.Exclude)
 
 	if err := suite.createExpectedResults(config.PgUri); err != nil {
 		fmt.Printf(err.Error())
@@ -152,7 +152,7 @@ func Test(root string) {
 		os.Exit(2)
 	}
 
-	suite := WalkFrom(root, resolveRoot(root, config.Root))
+	suite := WalkFrom(root, resolveRoot(root, config.Root), config.Exclude)
 
 	if err := suite.testQueries(config.PgUri); err != nil {
 		fmt.Printf(err.Error())
@@ -170,7 +170,7 @@ func List(dir string) {
 		// No config found: fall back to walking the full directory.
 		suite = Walk(dir)
 	} else {
-		suite = WalkFrom(dir, resolveRoot(dir, config.Root))
+		suite = WalkFrom(dir, resolveRoot(dir, config.Root), config.Exclude)
 	}
 	suite.Println()
 }

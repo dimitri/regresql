@@ -15,8 +15,9 @@ import (
 // also remember the code root directory, which as of now is always either
 // ./ or the -C command line parameter.
 type config struct {
-	Root  string
-	PgUri string
+	Root    string
+	PgUri   string
+	Exclude []string
 }
 
 func (s *Suite) getRegressConfigFile() string {

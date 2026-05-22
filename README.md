@@ -85,14 +85,30 @@ RegreSQL needs the following files and directories to run:
 
   - `./regresql` where to register needed files
   
-  - `./regresql/regresql.yaml`
+  - `./regresql/regress.yaml`
   
     Configuration file for the directory in which it's installed. It
     contains the PostgreSQL connection string where to connect to for
     running the regression tests and the top level directory where to find
     the SQL files to test against.
+    
+    Two optional fields further control which files are processed:
+    
+    - `root` — restrict SQL file discovery to a subdirectory, e.g. `src/sql`.
+    - `exclude` — a list of glob patterns (relative to the project root) for
+      SQL files that should be ignored entirely by all commands.
+    
+    Example:
+    
+    ```yaml
+    pguri: postgres:///mydb?sslmode=disable
+    root: src/sql
+    exclude:
+      - src/sql/version.sql
+      - src/sql/temp-*.sql
+    ```
   
-  - `./regresql/expected/path/to/query.yaml`
+  - `./regresql/plans/path/to/query.yaml`
   
     For each file *query.sql* found in your source tree, RegreSQL creates a
     subpath in `./regresql/plans` with a *query.yaml* file. This YAML file
@@ -110,7 +126,23 @@ RegreSQL needs the following files and directories to run:
     The result of running the query in *query.sql* is stored in *query.out*
     in the `regresql/out` directory subpath for it, so that it is possible
     to compare this result to the expected one in `regresql/expected`.
-    
+
+## Excluding queries
+
+Some SQL files in a project may not be suitable for regression testing (data
+seed scripts, migration helpers, etc.).  Add an `exclude` list to
+`regresql/regress.yaml` to skip them entirely — they will be invisible to
+`list`, `plan`, `update`, and `test`:
+
+```yaml
+exclude:
+  - src/sql/seed-data.sql
+  - src/sql/migrations/*.sql
+```
+
+Patterns follow Go's [`filepath.Match`](https://pkg.go.dev/path/filepath#Match)
+glob syntax (single `*` wildcard).  Paths are relative to the project root.
+
 ## Example
 
 In a small local application the command `regresql list` returns the
@@ -178,34 +210,34 @@ We can see the following files have been created by the RegreSQL tool:
 $ tree regresql/
 regresql/
 ├── expected
-│   └── src
-│       └── sql
-│           ├── album-by-artist.1.out
-│           ├── album-tracks.1.out
-│           ├── artist.1.out
-│           ├── genre-topn.1.out
-│           ├── genre-topn.top-1.out
-│           ├── genre-topn.top-3.out
-│           └── genre-tracks.out
+│   └── src
+│       └── sql
+│           ├── album-by-artist.1.out
+│           ├── album-tracks.1.out
+│           ├── artist.1.out
+│           ├── genre-topn.1.out
+│           ├── genre-topn.top-1.out
+│           ├── genre-topn.top-3.out
+│           └── genre-tracks.out
 ├── out
-│   └── src
-│       └── sql
-│           ├── album-by-artist.1.out
-│           ├── album-tracks.1.out
-│           ├── artist.1.out
-│           ├── genre-topn.1.out
-│           ├── genre-topn.top\ 1.out
-│           ├── genre-topn.top\ 3.out
-│           ├── genre-topn.top-1.out
-│           ├── genre-topn.top-3.out
-│           └── genre-tracks.out
+│   └── src
+│       └── sql
+│           ├── album-by-artist.1.out
+│           ├── album-tracks.1.out
+│           ├── artist.1.out
+│           ├── genre-topn.1.out
+│           ├── genre-topn.top\ 1.out
+│           ├── genre-topn.top\ 3.out
+│           ├── genre-topn.top-1.out
+│           ├── genre-topn.top-3.out
+│           └── genre-tracks.out
 ├── plans
-│   └── src
-│       └── sql
-│           ├── album-by-artist.yaml
-│           ├── album-tracks.yaml
-│           ├── artist.yaml
-│           └── genre-topn.yaml
+│   └── src
+│       └── sql
+│           ├── album-by-artist.yaml
+│           ├── album-tracks.yaml
+│           ├── artist.yaml
+│           └── genre-topn.yaml
 └── regress.yaml
 
 9 directories, 21 files
