@@ -163,13 +163,26 @@ func (s *Suite) initRegressHierarchy() error {
 
 // createExpectedResults walks the s Suite instance and runs its queries,
 // storing the results in the expected files.
-func (s *Suite) createExpectedResults(pguri string) error {
+//
+// versionedFiles is a set of SQL file paths (relative to suite root) that
+// should produce version-specific expected output (e.g. query.pg16.out).
+// Pass nil or an empty map to write generic .out files for all queries.
+func (s *Suite) createExpectedResults(pguri string, versionedFiles map[string]bool) error {
 	db, err := sql.Open("postgres", pguri)
 
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
+
+	pgMajor := 0
+	if len(versionedFiles) > 0 {
+		if v, err := GetPgMajorVersion(db); err == nil {
+			pgMajor = v
+		} else {
+			return fmt.Errorf("Failed to get PostgreSQL major version: %s", err)
+		}
+	}
 
 	fmt.Println("Writing expected Result Sets:")
 
@@ -182,6 +195,7 @@ func (s *Suite) createExpectedResults(pguri string) error {
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
+			relPath := filepath.Join(folder.Dir, name)
 
 			q, err := parseQueryFile(qfile)
 
@@ -194,7 +208,12 @@ func (s *Suite) createExpectedResults(pguri string) error {
 				return err
 			}
 			p.Execute(db)
-			p.WriteResultSets(edir)
+
+			filePgMajor := 0
+			if versionedFiles[relPath] {
+				filePgMajor = pgMajor
+			}
+			p.WriteResultSets(edir, filePgMajor)
 
 			for _, rs := range p.ResultSets {
 				fmt.Printf("    %s\n", filepath.Base(rs.Filename))
@@ -215,6 +234,8 @@ func (s *Suite) testQueries(pguri string) error {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
+
+	pgMajor, _ := GetPgMajorVersion(db)
 
 	t := tap.New()
 	t.Header(0)
@@ -241,10 +262,10 @@ func (s *Suite) testQueries(pguri string) error {
 			if err := p.Execute(db); err != nil {
 				return err
 			}
-			if err := p.WriteResultSets(odir); err != nil {
+			if err := p.WriteResultSets(odir, 0); err != nil {
 				return err
 			}
-			p.CompareResultSets(s.RegressDir, edir, t)
+			p.CompareResultSets(s.RegressDir, edir, t, pgMajor)
 		}
 	}
 	return nil

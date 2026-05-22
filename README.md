@@ -43,10 +43,16 @@ Basic usage of regresql:
     Create query plan files for all queries. Run that command when you add
     new queries to your repository.
   
-  - `regresql update [ -C dir ]`
+  - `regresql update [ -C dir ] [ --versioned-all | file ... ]`
   
     Updates the *expected* files from the queries, considering that the
     output is valid.
+    
+    When SQL file paths are given as arguments, those files produce
+    version-specific expected output (e.g. `query.pg16.out`) while all
+    other files are updated normally.  Use `--versioned-all` to write
+    version-specific files for every query in the suite.  The two forms
+    are mutually exclusive.
   
   - `regresql test [ -C dir ]`
   
@@ -119,14 +125,27 @@ RegreSQL needs the following files and directories to run:
   
     For each file *query.sql* found in your source tree, RegreSQL creates a
     subpath in `./regresql/expected` directory and stores in *query.out* the
-    expected result set of the query,
+    expected result set of the query.
+    
+    When a query's output differs across PostgreSQL major versions (e.g.
+    `SELECT version()`), version-specific expected files can be placed
+    alongside the generic one:
+    
+    ```
+    regresql/expected/src/sql/version.out        # generic fallback
+    regresql/expected/src/sql/version.pg14.out   # PostgreSQL 14.x
+    regresql/expected/src/sql/version.pg16.out   # PostgreSQL 16.x
+    ```
+    
+    During `regresql test` the version-specific file is used when it exists;
+    otherwise the generic file is used as a fallback.
     
   - `./regresql/out/path/to/query.sql`
   
     The result of running the query in *query.sql* is stored in *query.out*
     in the `regresql/out` directory subpath for it, so that it is possible
     to compare this result to the expected one in `regresql/expected`.
-
+    
 ## Excluding queries
 
 Some SQL files in a project may not be suitable for regression testing (data
@@ -142,6 +161,34 @@ exclude:
 
 Patterns follow Go's [`filepath.Match`](https://pkg.go.dev/path/filepath#Match)
 glob syntax (single `*` wildcard).  Paths are relative to the project root.
+
+## Version-specific expected files
+
+Queries whose output changes between PostgreSQL major versions — such as
+`SELECT version();` — can have separate expected files for each version.
+The file naming convention inserts `.pg{major}` before `.out`:
+
+| Query type | Generic | Version-specific |
+|---|---|---|
+| No parameters | `query.out` | `query.pg16.out` |
+| With parameters | `query.top-3.out` | `query.top-3.pg16.out` |
+
+During `regresql test` the version-specific file is used when it exists;
+otherwise the generic file is the fallback.
+
+To create version-specific expected files, run `regresql update` against each
+PostgreSQL version you want to support, naming the files explicitly:
+
+```bash
+# update only version.sql with a version-specific expected file
+regresql update src/sql/version.sql
+
+# update every query in the suite with version-specific expected files
+regresql update --versioned-all
+```
+
+Plain `regresql update` (no arguments, no flag) continues to write generic
+`.out` files as before, so existing workflows are unaffected.
 
 ## Example
 

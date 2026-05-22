@@ -2,6 +2,7 @@ package regresql
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,14 +15,28 @@ given Plan's ResultSet, and fills in a tap.T test output.
 
 The test is considered passed when the diff is empty.
 
+When pgMajor > 0, a version-specific expected file (e.g. query.pg16.out) is
+checked first; the generic file (query.out) is used as fallback.
+
 Rather than returning an error in case something wrong happens, we register
 a diagnostic against the tap output and fail the test case.
 */
-func (p *Plan) CompareResultSets(regressDir string, expectedDir string, t *tap.T) {
+func (p *Plan) CompareResultSets(regressDir string, expectedDir string, t *tap.T, pgMajor int) {
 	for i, rs := range p.ResultSets {
 		testName := strings.TrimPrefix(rs.Filename, regressDir+"/out/")
-		expectedFilename := filepath.Join(expectedDir,
-			filepath.Base(rs.Filename))
+		base := filepath.Base(rs.Filename)
+		expectedFilename := filepath.Join(expectedDir, base)
+
+		if pgMajor > 0 {
+			ext := filepath.Ext(base)
+			stem := strings.TrimSuffix(base, ext)
+			versioned := filepath.Join(expectedDir,
+				fmt.Sprintf("%s.pg%d%s", stem, pgMajor, ext))
+			if _, err := os.Stat(versioned); err == nil {
+				expectedFilename = versioned
+			}
+		}
+
 		diff, err := DiffFiles(expectedFilename, rs.Filename, 3)
 
 		if err != nil {

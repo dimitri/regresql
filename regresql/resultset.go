@@ -22,6 +22,16 @@ type ResultSet struct {
 	Filename string
 }
 
+// GetPgMajorVersion returns the PostgreSQL server's major version number
+// (e.g. 16 for PostgreSQL 16.x). Returns 0 and an error if the query fails.
+func GetPgMajorVersion(db *sql.DB) (int, error) {
+	var major int
+	err := db.QueryRow(
+		"SELECT current_setting('server_version_num')::int / 10000",
+	).Scan(&major)
+	return major, err
+}
+
 // TestConnectionString connects to PostgreSQL with pguri and issue a single
 // query (select 1"), because some errors (such as missing SSL certificates)
 // only happen at query time.

@@ -98,8 +98,12 @@ case and add a value for each parameter. `)
 
 /*
 Update updates the expected files from the queries and their parameters.
+
+versionedPaths lists SQL file paths (relative to root) that should produce
+version-specific expected output (e.g. query.pg16.out). When versionedAll is
+true every file in the suite is treated as versioned.
 */
-func Update(root string) {
+func Update(root string, versionedPaths []string, versionedAll bool) {
 	config, err := newSuite(root).readConfig()
 
 	if err != nil {
@@ -114,7 +118,24 @@ func Update(root string) {
 
 	suite := WalkFrom(root, resolveRoot(root, config.Root), config.Exclude)
 
-	if err := suite.createExpectedResults(config.PgUri); err != nil {
+	versionedFiles := make(map[string]bool)
+	if versionedAll {
+		for _, folder := range suite.Dirs {
+			for _, name := range folder.Files {
+				versionedFiles[filepath.Join(folder.Dir, name)] = true
+			}
+		}
+	} else {
+		for _, p := range versionedPaths {
+			rel, relErr := filepath.Rel(root, filepath.Join(root, p))
+			if relErr != nil {
+				rel = filepath.Clean(p)
+			}
+			versionedFiles[rel] = true
+		}
+	}
+
+	if err := suite.createExpectedResults(config.PgUri, versionedFiles); err != nil {
 		fmt.Printf(err.Error())
 		os.Exit(12)
 	}

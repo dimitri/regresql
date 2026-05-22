@@ -167,10 +167,13 @@ func (p *Plan) Execute(db *sql.DB) error {
 }
 
 // WriteResultSets serialize the result of running a query, as a Pretty
-// Printed output (comparable to a simplified `psql` output)
-func (p *Plan) WriteResultSets(dir string) error {
+// Printed output (comparable to a simplified `psql` output).
+//
+// When pgMajor > 0 the output files use a version-specific suffix
+// (e.g. query.pg16.out) instead of the generic query.out name.
+func (p *Plan) WriteResultSets(dir string, pgMajor int) error {
 	for i, rs := range p.ResultSets {
-		rsFileName := getResultSetPath(p, dir, i)
+		rsFileName := getResultSetPath(p, dir, i, pgMajor)
 		err := rs.Write(rsFileName, true)
 
 		if err != nil {
@@ -213,14 +216,19 @@ func getPlanPath(q *Query, targetdir string) string {
 	return planPath
 }
 
-func getResultSetPath(p *Plan, targetdir string, index int) string {
+func getResultSetPath(p *Plan, targetdir string, index int, pgMajor int) string {
 	var rsFileName string
 	basename := strings.TrimSuffix(filepath.Base(p.Path), path.Ext(p.Path))
 
+	versionSuffix := ""
+	if pgMajor > 0 {
+		versionSuffix = fmt.Sprintf(".pg%d", pgMajor)
+	}
+
 	if len(p.Query.Params) == 0 {
-		rsFileName = fmt.Sprintf("%s.out", basename)
+		rsFileName = fmt.Sprintf("%s%s.out", basename, versionSuffix)
 	} else {
-		rsFileName = fmt.Sprintf("%s.%s.out", basename, p.Names[index])
+		rsFileName = fmt.Sprintf("%s.%s%s.out", basename, p.Names[index], versionSuffix)
 	}
 	return filepath.Join(targetdir, rsFileName)
 }
