@@ -223,10 +223,21 @@ func (s *Suite) createExpectedResults(pguri string, versionedFiles map[string]bo
 	return nil
 }
 
+// ErrTestsFailed is returned by testQueries when one or more TAP tests report
+// "not ok".  The TAP output has already been written to stdout; callers
+// should exit non-zero without printing an additional error message.
+type ErrTestsFailed struct{ Count int }
+
+func (e *ErrTestsFailed) Error() string {
+	return fmt.Sprintf("%d test(s) failed\n", e.Count)
+}
+
 // testQueries walks the s Suite instance and runs queries against the plans
-// and sotores results in the out directory for manual inspection if
-// necessary, It then compares the actual output to the expected output and
-// reports a TAP output.
+// and stores results in the out directory for manual inspection if
+// necessary.  It then compares the actual output to the expected output and
+// reports TAP output.  It returns an *ErrTestsFailed when any test reports
+// "not ok", or a plain error for infrastructure failures (connection, I/O,
+// …).
 func (s *Suite) testQueries(pguri string) error {
 	db, err := sql.Open("postgres", pguri)
 
@@ -239,6 +250,8 @@ func (s *Suite) testQueries(pguri string) error {
 
 	t := tap.New()
 	t.Header(0)
+
+	failures := 0
 
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.PlanDir, folder.Dir)
@@ -265,8 +278,12 @@ func (s *Suite) testQueries(pguri string) error {
 			if err := p.WriteResultSets(odir, 0); err != nil {
 				return err
 			}
-			p.CompareResultSets(s.RegressDir, edir, t, pgMajor)
+			failures += p.CompareResultSets(s.RegressDir, edir, t, pgMajor)
 		}
+	}
+
+	if failures > 0 {
+		return &ErrTestsFailed{Count: failures}
 	}
 	return nil
 }

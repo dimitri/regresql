@@ -176,8 +176,13 @@ func Test(root string) {
 	suite := WalkFrom(root, resolveRoot(root, config.Root), config.Exclude)
 
 	if err := suite.testQueries(config.PgUri); err != nil {
-		fmt.Printf(err.Error())
-		os.Exit(13)
+		// *ErrTestsFailed means the TAP output already reported the
+		// failures; just exit 1 so the shell / CI catch them.
+		if _, ok := err.(*ErrTestsFailed); !ok {
+			fmt.Printf(err.Error())
+			os.Exit(13)
+		}
+		os.Exit(1)
 	}
 }
 

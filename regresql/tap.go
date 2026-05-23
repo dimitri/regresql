@@ -21,7 +21,11 @@ checked first; the generic file (query.out) is used as fallback.
 Rather than returning an error in case something wrong happens, we register
 a diagnostic against the tap output and fail the test case.
 */
-func (p *Plan) CompareResultSets(regressDir string, expectedDir string, t *tap.T, pgMajor int) {
+// CompareResultSets compares each result set in the plan against its expected
+// file and reports TAP output.  It returns the number of failing tests so the
+// caller can propagate a non-zero exit code.
+func (p *Plan) CompareResultSets(regressDir string, expectedDir string, t *tap.T, pgMajor int) int {
+	failures := 0
 	for i, rs := range p.ResultSets {
 		testName := strings.TrimPrefix(rs.Filename, regressDir+"/out/")
 		base := filepath.Base(rs.Filename)
@@ -87,6 +91,11 @@ Actual Result File: '%s'
 					rs.Filename,
 					diff))
 		}
-		t.Ok(diff == "", testName)
+		passed := diff == ""
+		if !passed {
+			failures++
+		}
+		t.Ok(passed, testName)
 	}
+	return failures
 }
