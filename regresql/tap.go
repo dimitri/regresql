@@ -39,6 +39,17 @@ func (p *Plan) CompareResultSets(regressDir string, expectedDir string, t *tap.T
 
 		diff, err := DiffFiles(expectedFilename, rs.Filename, 3)
 
+		// p.Names and p.Bindings are empty for parameterless queries; guard
+		// against an out-of-range panic before entering the diagnostic branches.
+		bindingName := ""
+		if i < len(p.Names) {
+			bindingName = p.Names[i]
+		}
+		var bindingParams interface{} = map[string]string{}
+		if i < len(p.Bindings) {
+			bindingParams = p.Bindings[i]
+		}
+
 		if err != nil {
 			t.Diagnostic(
 				fmt.Sprintf(`Query File: '%s'
@@ -51,8 +62,8 @@ Actual Result File: '%s'
 Failed to compare results: %s`,
 					p.Query.Path,
 					p.Path,
-					p.Names[i],
-					p.Bindings[i],
+					bindingName,
+					bindingParams,
 					expectedFilename,
 					rs.Filename,
 					err.Error()))
@@ -70,8 +81,8 @@ Actual Result File: '%s'
 %s`,
 					p.Query.Path,
 					p.Path,
-					p.Names[i],
-					p.Bindings[i],
+					bindingName,
+					bindingParams,
 					expectedFilename,
 					rs.Filename,
 					diff))
